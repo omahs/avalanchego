@@ -21,7 +21,7 @@ concurrency:
 
 env:
   go_version: '~1.21.7'
-  tmpnet_data_path: ~/.tmpnet/networks/1000
+  tmpnet_data_path: ~/.tmpnet/networks
 
 jobs:
   Unit:
