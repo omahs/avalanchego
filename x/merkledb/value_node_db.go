@@ -6,7 +6,6 @@ package merkledb
 import (
 	"sync"
 
-	"github.com/ava-labs/avalanchego/cache"
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/utils"
 )
@@ -23,7 +22,7 @@ type valueNodeDB struct {
 
 	// If a value is nil, the corresponding key isn't in the trie.
 	// Paths in [nodeCache] aren't prefixed with [valueNodePrefix].
-	nodeCache cache.Cacher[Key, *node]
+	nodeCache onEvictCache[Key, *node]
 	metrics   merkleMetrics
 
 	closed utils.Atomic[bool]
@@ -39,7 +38,7 @@ func newValueNodeDB(
 		metrics:    metrics,
 		baseDB:     db,
 		bufferPool: bufferPool,
-		nodeCache:  cache.NewSizedLRU(cacheSize, cacheEntrySize),
+		nodeCache:  newOnEvictCache(cacheSize, cacheEntrySize, func(Key, *node) error { return nil }),
 	}
 }
 
