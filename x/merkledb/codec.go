@@ -148,17 +148,9 @@ func (c *codecImpl) encodeDBNode(n *dbNode) []byte {
 }
 
 func (c *codecImpl) encodeHashValues(n *node, buf *bytes.Buffer) {
-	var (
-		numChildren = len(n.children)
-		// Estimate size [hv] to prevent memory allocations
-		estimatedLen = minVarIntLen + numChildren*hashValuesChildLen + estimatedValueLen + estimatedKeyLen
-	)
-
-	// Prepare buffer
-	buf.Grow(estimatedLen)
+	c.encodeUint(buf, uint64(len(n.children)))
 
 	// ensure that the order of entries is consistent
-	c.encodeUint(buf, uint64(numChildren))
 	keys := maps.Keys(n.children)
 	slices.Sort(keys)
 	for _, index := range keys {

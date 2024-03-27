@@ -15,7 +15,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/maybe"
 )
 
-const initialBufferCapacity = 1024
+const initialBufferCapacity = 16_384
 
 type nodeHasher struct {
 	hasher hash.Hash
