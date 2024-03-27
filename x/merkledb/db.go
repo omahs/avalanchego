@@ -8,14 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"slices"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/exp/maps"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/ids"
@@ -153,12 +151,6 @@ type Config struct {
 	// BranchFactor determines the number of children each node can have.
 	BranchFactor BranchFactor
 
-	// RootGenConcurrency is the number of goroutines to use when
-	// generating a new state root.
-	//
-	// If 0 is specified, [runtime.NumCPU] will be used.
-	RootGenConcurrency uint
-
 	// The number of changes to the database that we store in memory in order to
 	// serve change proofs.
 	HistoryLength uint
@@ -218,10 +210,6 @@ type merkleDB struct {
 	// Valid children of this trie.
 	childViews []*view
 
-	// calculateNodeIDsSema controls the number of goroutines inside
-	// [calculateNodeIDsHelper] at any given time.
-	calculateNodeIDsSema *semaphore.Weighted
-
 	tokenSize int
 }
 
@@ -242,11 +230,6 @@ func newDatabase(
 ) (*merkleDB, error) {
 	if err := config.BranchFactor.Valid(); err != nil {
 		return nil, err
-	}
-
-	rootGenConcurrency := uint(runtime.NumCPU())
-	if config.RootGenConcurrency != 0 {
-		rootGenConcurrency = config.RootGenConcurrency
 	}
 
 	// Share a sync.Pool of []byte between the intermediateNodeDB and valueNodeDB
@@ -272,12 +255,11 @@ func newDatabase(
 			bufferPool,
 			metrics,
 			int(config.ValueNodeCacheSize)),
-		history:              newTrieHistory(int(config.HistoryLength)),
-		debugTracer:          getTracerIfEnabled(config.TraceLevel, DebugTrace, config.Tracer),
-		infoTracer:           getTracerIfEnabled(config.TraceLevel, InfoTrace, config.Tracer),
-		childViews:           make([]*view, 0, defaultPreallocationSize),
-		calculateNodeIDsSema: semaphore.NewWeighted(int64(rootGenConcurrency)),
-		tokenSize:            BranchFactorToTokenSize[config.BranchFactor],
+		history:     newTrieHistory(int(config.HistoryLength)),
+		debugTracer: getTracerIfEnabled(config.TraceLevel, DebugTrace, config.Tracer),
+		infoTracer:  getTracerIfEnabled(config.TraceLevel, InfoTrace, config.Tracer),
+		childViews:  make([]*view, 0, defaultPreallocationSize),
+		tokenSize:   BranchFactorToTokenSize[config.BranchFactor],
 	}
 
 	if err := trieDB.initializeRoot(); err != nil {

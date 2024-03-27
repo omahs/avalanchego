@@ -244,9 +244,7 @@ func (v *view) calculateNodeIDs(ctx context.Context) error {
 		}
 
 		if !v.root.IsNothing() {
-			_ = v.db.calculateNodeIDsSema.Acquire(context.Background(), 1)
 			v.changes.rootID = v.calculateNodeIDsHelper(v.root.Value())
-			v.db.calculateNodeIDsSema.Release(1)
 		} else {
 			v.changes.rootID = ids.Empty
 		}
@@ -270,29 +268,20 @@ func (v *view) calculateNodeIDs(ctx context.Context) error {
 func (v *view) calculateNodeIDsHelper(n *node) ids.ID {
 	// We use [wg] to wait until all descendants of [n] have been updated.
 	var wg sync.WaitGroup
-
+	wg.Add(len(n.children))
 	for childIndex, childEntry := range n.children {
-		childEntry := childEntry // New variable so goroutine doesn't capture loop variable.
-		childKey := n.key.Extend(ToToken(childIndex, v.tokenSize), childEntry.compressedKey)
-		childNodeChange, ok := v.changes.nodes[childKey]
-		if !ok {
-			// This child wasn't changed.
-			continue
-		}
-		childEntry.hasValue = childNodeChange.after.hasValue()
+		go func(childIndex byte, childEntry *child) {
+			defer wg.Done()
 
-		// Try updating the child and its descendants in a goroutine.
-		if ok := v.db.calculateNodeIDsSema.TryAcquire(1); ok {
-			wg.Add(1)
-			go func() {
-				childEntry.id = v.calculateNodeIDsHelper(childNodeChange.after)
-				v.db.calculateNodeIDsSema.Release(1)
-				wg.Done()
-			}()
-		} else {
-			// We're at the goroutine limit; do the work in this goroutine.
+			childKey := n.key.Extend(ToToken(childIndex, v.tokenSize), childEntry.compressedKey)
+			childNodeChange, ok := v.changes.nodes[childKey]
+			if !ok {
+				// This child wasn't changed.
+				return
+			}
+			childEntry.hasValue = childNodeChange.after.hasValue()
 			childEntry.id = v.calculateNodeIDsHelper(childNodeChange.after)
-		}
+		}(childIndex, childEntry)
 	}
 
 	// Wait until all descendants of [n] have been updated.
