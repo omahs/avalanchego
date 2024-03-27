@@ -62,9 +62,9 @@ type encoder interface {
 	encodeDBNode(n *dbNode) []byte
 	encodedDBNodeSize(n *dbNode) int
 
-	// Returns the bytes that will be hashed to generate [n]'s ID.
+	// Packs the bytes that will be hashed to generate [n]'s ID in [buf].
 	// Assumes [n] is non-nil.
-	encodeHashValues(n *node) []byte
+	encodeHashValues(n *node, buf *bytes.Buffer)
 	encodeKey(key Key) []byte
 }
 
@@ -147,17 +147,18 @@ func (c *codecImpl) encodeDBNode(n *dbNode) []byte {
 	return buf.Bytes()
 }
 
-func (c *codecImpl) encodeHashValues(n *node) []byte {
+func (c *codecImpl) encodeHashValues(n *node, buf *bytes.Buffer) {
 	var (
 		numChildren = len(n.children)
 		// Estimate size [hv] to prevent memory allocations
 		estimatedLen = minVarIntLen + numChildren*hashValuesChildLen + estimatedValueLen + estimatedKeyLen
-		buf          = bytes.NewBuffer(make([]byte, 0, estimatedLen))
 	)
 
-	c.encodeUint(buf, uint64(numChildren))
+	// Prepare buffer
+	buf.Grow(estimatedLen)
 
 	// ensure that the order of entries is consistent
+	c.encodeUint(buf, uint64(numChildren))
 	keys := maps.Keys(n.children)
 	slices.Sort(keys)
 	for _, index := range keys {
@@ -167,8 +168,6 @@ func (c *codecImpl) encodeHashValues(n *node) []byte {
 	}
 	c.encodeMaybeByteSlice(buf, n.valueDigest)
 	c.encodeKeyToBuffer(buf, n.key)
-
-	return buf.Bytes()
 }
 
 func (c *codecImpl) decodeDBNode(b []byte, n *dbNode) error {

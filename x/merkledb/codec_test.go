@@ -229,11 +229,13 @@ func FuzzEncodeHashValues(f *testing.F) {
 				}
 
 				// Serialize hv with both codecs
-				hvBytes1 := codec1.encodeHashValues(hv)
-				hvBytes2 := codec2.encodeHashValues(hv)
+				hvBytes1 := bytes.NewBuffer(nil)
+				codec1.encodeHashValues(hv, hvBytes1)
+				hvBytes2 := bytes.NewBuffer(nil)
+				codec2.encodeHashValues(hv, hvBytes2)
 
 				// Make sure they're the same
-				require.Equal(hvBytes1, hvBytes2)
+				require.Equal(hvBytes1.Bytes(), hvBytes2.Bytes())
 			}
 		},
 	)

@@ -4,12 +4,32 @@
 package merkledb
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"hash"
 	"slices"
+	"sync"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 	"github.com/ava-labs/avalanchego/utils/maybe"
 )
+
+const initialBufferCapacity = 1024
+
+type nodeHasher struct {
+	hasher hash.Hash
+	buf    *bytes.Buffer
+}
+
+var nodeHashers = sync.Pool{
+	New: func() interface{} {
+		return &nodeHasher{
+			hasher: sha256.New(),
+			buf:    bytes.NewBuffer(make([]byte, 0, initialBufferCapacity)),
+		}
+	},
+}
 
 const HashLength = 32
 
@@ -70,8 +90,15 @@ func (n *node) bytes() []byte {
 // Returns and caches the ID of this node.
 func (n *node) calculateID(metrics merkleMetrics) ids.ID {
 	metrics.HashCalculated()
-	bytes := codec.encodeHashValues(n)
-	return hashing.ComputeHash256Array(bytes)
+
+	// Get a hasher from the pool or create a new one
+	h := nodeHashers.Get().(*nodeHasher)
+	defer nodeHashers.Put(h)
+	h.hasher.Reset()
+	h.buf.Reset()
+
+	codec.encodeHashValues(n, h.buf)
+	return ids.ID(h.hasher.Sum(h.buf.Bytes()))
 }
 
 // Set [n]'s value to [val].
