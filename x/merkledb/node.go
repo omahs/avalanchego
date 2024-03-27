@@ -90,15 +90,13 @@ func (n *node) bytes() []byte {
 // Returns and caches the ID of this node.
 func (n *node) calculateID(metrics merkleMetrics) ids.ID {
 	metrics.HashCalculated()
-
-	// Get a hasher from the pool or create a new one
 	h := nodeHashers.Get().(*nodeHasher)
-	defer nodeHashers.Put(h)
+	codec.encodeHashValues(n, h.buf)
+	id := ids.ID(h.hasher.Sum(h.buf.Bytes()))
 	h.hasher.Reset()
 	h.buf.Reset()
-
-	codec.encodeHashValues(n, h.buf)
-	return ids.ID(h.hasher.Sum(h.buf.Bytes()))
+	nodeHashers.Put(h)
+	return id
 }
 
 // Set [n]'s value to [val].
