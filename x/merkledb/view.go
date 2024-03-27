@@ -245,7 +245,7 @@ func (v *view) calculateNodeIDs(ctx context.Context) error {
 
 		if !v.root.IsNothing() {
 			_ = v.db.calculateNodeIDsSema.Acquire(context.Background(), 1)
-			v.changes.rootID = v.calculateNodeIDsHelper(v.root.Value())
+			v.changes.rootID = v.calculateNodeIDsHelper(v.root.Value(), true)
 			v.db.calculateNodeIDsSema.Release(1)
 		} else {
 			v.changes.rootID = ids.Empty
@@ -267,7 +267,7 @@ func (v *view) calculateNodeIDs(ctx context.Context) error {
 
 // Calculates the ID of all descendants of [n] which need to be recalculated,
 // and then calculates the ID of [n] itself.
-func (v *view) calculateNodeIDsHelper(n *node) ids.ID {
+func (v *view) calculateNodeIDsHelper(n *node, start bool) ids.ID {
 	// We use [wg] to wait until all descendants of [n] have been updated.
 	var wg sync.WaitGroup
 
@@ -282,16 +282,15 @@ func (v *view) calculateNodeIDsHelper(n *node) ids.ID {
 		childEntry.hasValue = childNodeChange.after.hasValue()
 
 		// Try updating the child and its descendants in a goroutine.
-		if ok := v.db.calculateNodeIDsSema.TryAcquire(1); ok {
+		if start {
 			wg.Add(1)
 			go func() {
-				childEntry.id = v.calculateNodeIDsHelper(childNodeChange.after)
-				v.db.calculateNodeIDsSema.Release(1)
+				childEntry.id = v.calculateNodeIDsHelper(childNodeChange.after, false)
 				wg.Done()
 			}()
 		} else {
 			// We're at the goroutine limit; do the work in this goroutine.
-			childEntry.id = v.calculateNodeIDsHelper(childNodeChange.after)
+			childEntry.id = v.calculateNodeIDsHelper(childNodeChange.after, false)
 		}
 	}
 
