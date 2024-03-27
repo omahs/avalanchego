@@ -6,9 +6,13 @@ package merkledb
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"sync"
+	"time"
 
+	"github.com/shirou/gopsutil/process"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/ava-labs/avalanchego/database"
@@ -243,11 +247,34 @@ func (v *view) calculateNodeIDs(ctx context.Context) error {
 			}
 		}
 
+		p, innerErr := process.NewProcess(int32(os.Getpid()))
+		if innerErr != nil {
+			err = innerErr
+			return
+		}
+
+		startTimes, innerErr := p.Times()
+		if innerErr != nil {
+			err = innerErr
+			return
+		}
+		startTime := time.Now()
+
 		if !v.root.IsNothing() {
 			v.changes.rootID = v.calculateNodeIDsHelper(v.root.Value())
 		} else {
 			v.changes.rootID = ids.Empty
 		}
+
+		endTimes, innerErr := p.Times()
+		if innerErr != nil {
+			err = innerErr
+			return
+		}
+		endTime := time.Now()
+
+		percentCPU := (endTimes.Total() - startTimes.Total()) / endTime.Sub(startTime).Seconds()
+		fmt.Println(percentCPU)
 
 		v.changes.rootChange = change[maybe.Maybe[*node]]{
 			before: oldRoot,
