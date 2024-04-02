@@ -8,11 +8,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/shirou/gopsutil/process"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/semaphore"
@@ -979,12 +982,31 @@ func (db *merkleDB) commitChanges(ctx context.Context, trieToCommit *view) error
 	}
 	nodesSpan.End()
 
+	p, innerErr := process.NewProcess(int32(os.Getpid()))
+	if innerErr != nil {
+		return innerErr
+	}
+
+	startTimes, innerErr := p.Times()
+	if innerErr != nil {
+		return innerErr
+	}
+	startTime := time.Now()
+
 	_, commitSpan := db.infoTracer.Start(ctx, "MerkleDB.commitChanges.valueNodeDBCommit")
 	err := currentValueNodeBatch.Write()
 	commitSpan.End()
 	if err != nil {
 		return err
 	}
+
+	endTimes, innerErr := p.Times()
+	if innerErr != nil {
+		return innerErr
+	}
+	endTime := time.Now()
+	percentCPU := (endTimes.Total() - startTimes.Total()) / endTime.Sub(startTime).Seconds()
+	fmt.Println("commit:", percentCPU)
 
 	db.history.record(changes)
 
