@@ -920,6 +920,7 @@ func (db *merkleDB) commitBatch(ops []database.BatchOp) error {
 // Assumes [trieToCommit]'s node IDs have been calculated.
 // Assumes [db.commitLock] is held.
 func (db *merkleDB) commitChanges(ctx context.Context, trieToCommit *view) error {
+	fmt.Println("starting to commit changes")
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -953,6 +954,8 @@ func (db *merkleDB) commitChanges(ctx context.Context, trieToCommit *view) error
 		return nil
 	}
 
+	cl := time.Now()
+	fmt.Println("starting change loop")
 	currentValueNodeBatch := db.valueNodeDB.NewBatch()
 	_, nodesSpan := db.infoTracer.Start(ctx, "MerkleDB.commitChanges.writeNodes")
 	for key, nodeChange := range changes.nodes {
@@ -981,6 +984,7 @@ func (db *merkleDB) commitChanges(ctx context.Context, trieToCommit *view) error
 		}
 	}
 	nodesSpan.End()
+	fmt.Println("finish change loop", time.Since(cl))
 
 	p, innerErr := process.NewProcess(int32(os.Getpid()))
 	if innerErr != nil {
