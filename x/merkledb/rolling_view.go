@@ -99,9 +99,6 @@ func (v *RollingView) getRoot() maybe.Maybe[*node] {
 }
 
 func (v *RollingView) merklizer(n *node) ids.ID {
-	// We use [wg] to wait until all descendants of [n] have been updated.
-	var wg sync.WaitGroup
-
 	for childIndex, childEntry := range n.children {
 		childEntry := childEntry // New variable so goroutine doesn't capture loop variable.
 		childKey := n.key.Extend(ToToken(childIndex, v.tokenSize), childEntry.compressedKey)
@@ -113,21 +110,8 @@ func (v *RollingView) merklizer(n *node) ids.ID {
 		childEntry.hasValue = childNodeChange.after.hasValue()
 
 		// Try updating the child and its descendants in a goroutine.
-		if ok := v.db.calculateNodeIDsSema.TryAcquire(1); ok {
-			wg.Add(1)
-			go func() {
-				childEntry.id = v.merklizer(childNodeChange.after)
-				v.db.calculateNodeIDsSema.Release(1)
-				wg.Done()
-			}()
-		} else {
-			// We're at the goroutine limit; do the work in this goroutine.
-			childEntry.id = v.merklizer(childNodeChange.after)
-		}
+		childEntry.id = v.merklizer(childNodeChange.after)
 	}
-
-	// Wait until all descendants of [n] have been updated.
-	wg.Wait()
 
 	// The IDs [n]'s descendants are up to date so we can calculate [n]'s ID.
 	return n.calculateID(v.db.metrics)
@@ -534,9 +518,7 @@ func (v *RollingView) Merklize(ctx context.Context) (ids.ID, error) {
 
 			// Calculate new root
 			if !v.root.IsNothing() {
-				_ = v.db.calculateNodeIDsSema.Acquire(context.Background(), 1)
 				v.changes.rootID = v.merklizer(v.root.Value())
-				v.db.calculateNodeIDsSema.Release(1)
 			} else {
 				v.changes.rootID = ids.Empty
 			}

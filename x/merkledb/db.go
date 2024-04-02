@@ -248,7 +248,6 @@ func newDatabase(
 	if config.RootGenConcurrency != 0 {
 		rootGenConcurrency = config.RootGenConcurrency
 	}
-	fmt.Println("RootGenConcurrency:", rootGenConcurrency)
 
 	// Share a sync.Pool of []byte between the intermediateNodeDB and valueNodeDB
 	// to reduce memory allocations.
