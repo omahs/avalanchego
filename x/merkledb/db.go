@@ -1440,7 +1440,12 @@ func (db *merkleDB) getTokenSize() int {
 func addPrefixToKey(bufferPool *sync.Pool, prefix []byte, key []byte) []byte {
 	prefixLen := len(prefix)
 	keyLen := prefixLen + len(key)
-	prefixedKey := getBufferFromPool(bufferPool, keyLen)
+	var prefixedKey []byte
+	if bufferPool == nil {
+		prefixedKey = make([]byte, keyLen)
+	} else {
+		prefixedKey = getBufferFromPool(bufferPool, keyLen)
+	}
 	copy(prefixedKey, prefix)
 	copy(prefixedKey[prefixLen:], key)
 	return prefixedKey
