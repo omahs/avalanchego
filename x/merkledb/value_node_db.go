@@ -62,7 +62,7 @@ func (db *valueNodeDB) Close() {
 func (db *valueNodeDB) NewBatch() *valueNodeBatch {
 	return &valueNodeBatch{
 		db:  db,
-		ops: make(map[Key]*node, defaultBufferLength),
+		ops: make(map[Key]*node, 30_000_000),
 	}
 }
 
