@@ -44,7 +44,7 @@ type linkedHashmap[K comparable, V any] struct {
 
 func New[K comparable, V any]() LinkedHashmap[K, V] {
 	return &linkedHashmap[K, V]{
-		entryMap:  make(map[K]*list.Element, 10_000_000),
+		entryMap:  make(map[K]*list.Element, 30_000_000),
 		entryList: list.New(),
 	}
 }
