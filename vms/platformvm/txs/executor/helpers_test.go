@@ -42,6 +42,7 @@ import (
 	"github.com/ava-labs/avalanchego/vms/platformvm/status"
 	"github.com/ava-labs/avalanchego/vms/platformvm/txs"
 	"github.com/ava-labs/avalanchego/vms/platformvm/txs/txstest"
+	"github.com/ava-labs/avalanchego/vms/platformvm/upgrade"
 	"github.com/ava-labs/avalanchego/vms/platformvm/utxo"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
 	"github.com/ava-labs/avalanchego/wallet/subnet/primary/common"
@@ -50,13 +51,6 @@ import (
 const (
 	defaultWeight = 5 * units.MilliAvax
 	trackChecksum = false
-
-	apricotPhase3 fork = iota
-	apricotPhase5
-	banff
-	cortina
-	durango
-	eUpgrade
 )
 
 var (
@@ -84,8 +78,6 @@ func init() {
 		genesisNodeIDs[i] = ids.GenerateTestNodeID()
 	}
 }
-
-type fork uint8
 
 type mutableSharedMemory struct {
 	atomic.SharedMemory
@@ -119,7 +111,7 @@ func (e *environment) SetState(blkID ids.ID, chainState state.Chain) {
 	e.states[blkID] = chainState
 }
 
-func newEnvironment(t *testing.T, f fork) *environment {
+func newEnvironment(t *testing.T, f upgrade.Upgrade) *environment {
 	var isBootstrapped utils.Atomic[bool]
 	isBootstrapped.Set(true)
 
@@ -273,7 +265,7 @@ func defaultState(
 	return state
 }
 
-func defaultConfig(t *testing.T, f fork) *config.Config {
+func defaultConfig(t *testing.T, f upgrade.Upgrade) *config.Config {
 	c := &config.Config{
 		Chains:                 chains.TestManager,
 		UptimeLockedCalculator: uptime.NewLockedCalculator(),
@@ -292,31 +284,33 @@ func defaultConfig(t *testing.T, f fork) *config.Config {
 			MintingPeriod:      365 * 24 * time.Hour,
 			SupplyCap:          720 * units.MegaAvax,
 		},
-		ApricotPhase3Time: mockable.MaxTime,
-		ApricotPhase5Time: mockable.MaxTime,
-		BanffTime:         mockable.MaxTime,
-		CortinaTime:       mockable.MaxTime,
-		DurangoTime:       mockable.MaxTime,
-		EUpgradeTime:      mockable.MaxTime,
+		Times: upgrade.Times{
+			ApricotPhase3Time: mockable.MaxTime,
+			ApricotPhase5Time: mockable.MaxTime,
+			BanffTime:         mockable.MaxTime,
+			CortinaTime:       mockable.MaxTime,
+			DurangoTime:       mockable.MaxTime,
+			EUpgradeTime:      mockable.MaxTime,
+		},
 	}
 
 	switch f {
-	case eUpgrade:
+	case upgrade.EUpgrade:
 		c.EUpgradeTime = defaultValidateStartTime.Add(-2 * time.Second)
 		fallthrough
-	case durango:
+	case upgrade.Durango:
 		c.DurangoTime = defaultValidateStartTime.Add(-2 * time.Second)
 		fallthrough
-	case cortina:
+	case upgrade.Cortina:
 		c.CortinaTime = defaultValidateStartTime.Add(-2 * time.Second)
 		fallthrough
-	case banff:
+	case upgrade.Banff:
 		c.BanffTime = defaultValidateStartTime.Add(-2 * time.Second)
 		fallthrough
-	case apricotPhase5:
+	case upgrade.ApricotPhase5:
 		c.ApricotPhase5Time = defaultValidateEndTime
 		fallthrough
-	case apricotPhase3:
+	case upgrade.ApricotPhase3:
 		c.ApricotPhase3Time = defaultValidateEndTime
 	default:
 		require.FailNow(t, "unhandled fork", f)
@@ -325,9 +319,9 @@ func defaultConfig(t *testing.T, f fork) *config.Config {
 	return c
 }
 
-func defaultClock(f fork) *mockable.Clock {
+func defaultClock(f upgrade.Upgrade) *mockable.Clock {
 	now := defaultGenesisTime
-	if f >= banff {
+	if f >= upgrade.Banff {
 		// 1 second after active fork
 		now = defaultValidateEndTime.Add(-2 * time.Second)
 	}

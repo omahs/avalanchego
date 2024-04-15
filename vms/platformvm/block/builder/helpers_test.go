@@ -45,6 +45,7 @@ import (
 	"github.com/ava-labs/avalanchego/vms/platformvm/txs"
 	"github.com/ava-labs/avalanchego/vms/platformvm/txs/mempool"
 	"github.com/ava-labs/avalanchego/vms/platformvm/txs/txstest"
+	"github.com/ava-labs/avalanchego/vms/platformvm/upgrade"
 	"github.com/ava-labs/avalanchego/vms/platformvm/utxo"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
 
@@ -57,15 +58,7 @@ import (
 const (
 	defaultWeight = 10000
 	trackChecksum = false
-
-	apricotPhase3 fork = iota
-	apricotPhase5
-	banff
-	cortina
-	durango
-	eUpgrade
-
-	latestFork = durango
+	latestFork    = upgrade.Durango
 )
 
 var (
@@ -93,8 +86,6 @@ func init() {
 	}
 }
 
-type fork uint8
-
 type mutableSharedMemory struct {
 	atomic.SharedMemory
 }
@@ -120,7 +111,7 @@ type environment struct {
 	backend        txexecutor.Backend
 }
 
-func newEnvironment(t *testing.T, f fork) *environment { //nolint:unparam
+func newEnvironment(t *testing.T, f upgrade.Upgrade) *environment { //nolint:unparam
 	require := require.New(t)
 
 	res := &environment{
@@ -302,7 +293,7 @@ func defaultState(
 	return state
 }
 
-func defaultConfig(t *testing.T, f fork) *config.Config {
+func defaultConfig(t *testing.T, f upgrade.Upgrade) *config.Config {
 	c := &config.Config{
 		Chains:                 chains.TestManager,
 		UptimeLockedCalculator: uptime.NewLockedCalculator(),
@@ -321,31 +312,33 @@ func defaultConfig(t *testing.T, f fork) *config.Config {
 			MintingPeriod:      365 * 24 * time.Hour,
 			SupplyCap:          720 * units.MegaAvax,
 		},
-		ApricotPhase3Time: mockable.MaxTime,
-		ApricotPhase5Time: mockable.MaxTime,
-		BanffTime:         mockable.MaxTime,
-		CortinaTime:       mockable.MaxTime,
-		DurangoTime:       mockable.MaxTime,
-		EUpgradeTime:      mockable.MaxTime,
+		Times: upgrade.Times{
+			ApricotPhase3Time: mockable.MaxTime,
+			ApricotPhase5Time: mockable.MaxTime,
+			BanffTime:         mockable.MaxTime,
+			CortinaTime:       mockable.MaxTime,
+			DurangoTime:       mockable.MaxTime,
+			EUpgradeTime:      mockable.MaxTime,
+		},
 	}
 
 	switch f {
-	case eUpgrade:
+	case upgrade.EUpgrade:
 		c.EUpgradeTime = time.Time{} // neglecting fork ordering this for package tests
 		fallthrough
-	case durango:
+	case upgrade.Durango:
 		c.DurangoTime = time.Time{} // neglecting fork ordering for this package's tests
 		fallthrough
-	case cortina:
+	case upgrade.Cortina:
 		c.CortinaTime = time.Time{} // neglecting fork ordering for this package's tests
 		fallthrough
-	case banff:
+	case upgrade.Banff:
 		c.BanffTime = time.Time{} // neglecting fork ordering for this package's tests
 		fallthrough
-	case apricotPhase5:
+	case upgrade.ApricotPhase5:
 		c.ApricotPhase5Time = defaultValidateEndTime
 		fallthrough
-	case apricotPhase3:
+	case upgrade.ApricotPhase3:
 		c.ApricotPhase3Time = defaultValidateEndTime
 	default:
 		require.FailNow(t, "unhandled fork", f)
