@@ -33,8 +33,7 @@ func TestVerify(t *testing.T) {
 				hash, err := payload.NewHash(ids.Empty)
 				require.NoError(t, err)
 
-				signature := &testSignature{}
-				return New(0, ids.Empty, hash, signature)
+				return New(0, ids.Empty, hash, &testSignature{})
 			}(),
 		},
 		{
@@ -56,6 +55,7 @@ func TestVerify(t *testing.T) {
 						return errFoo
 					},
 				}
+
 				return New(0, ids.Empty, hash, signature)
 			}(),
 			expected: errFoo,
