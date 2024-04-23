@@ -10,23 +10,27 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/staking"
+	"github.com/ava-labs/avalanchego/utils/crypto/bls"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
+	"github.com/ava-labs/avalanchego/vms/proposervm/acceptanceproof"
 )
 
 func BuildUnsigned(
 	parentID ids.ID,
 	timestamp time.Time,
 	pChainHeight uint64,
+	acceptanceProof []byte,
 	blockBytes []byte,
 ) (SignedBlock, error) {
 	var block SignedBlock = &statelessBlock{
 		StatelessBlock: statelessUnsignedBlock{
-			ParentID:     parentID,
-			Timestamp:    timestamp.Unix(),
-			PChainHeight: pChainHeight,
-			Certificate:  nil,
-			Block:        blockBytes,
+			ParentID:        parentID,
+			Timestamp:       timestamp.Unix(),
+			PChainHeight:    pChainHeight,
+			Certificate:     nil,
+			AcceptanceProof: acceptanceProof,
+			Block:           blockBytes,
 		},
 		timestamp: timestamp,
 	}
@@ -44,21 +48,25 @@ func Build(
 	timestamp time.Time,
 	pChainHeight uint64,
 	cert *staking.Certificate,
+	acceptanceProof *acceptanceproof.AcceptanceProof,
 	blockBytes []byte,
 	chainID ids.ID,
 	key crypto.Signer,
 ) (SignedBlock, error) {
 	block := &statelessBlock{
 		StatelessBlock: statelessUnsignedBlock{
-			ParentID:     parentID,
-			Timestamp:    timestamp.Unix(),
-			PChainHeight: pChainHeight,
-			Certificate:  cert.Raw,
-			Block:        blockBytes,
+			ParentID:        parentID,
+			Timestamp:       timestamp.Unix(),
+			PChainHeight:    pChainHeight,
+			Certificate:     cert.Raw,
+			AcceptanceProof: bls.SignatureToBytes(acceptanceProof.BLSSignature),
+			Signers:         acceptanceProof.Signers.Bytes(),
+			Block:           blockBytes,
 		},
-		timestamp: timestamp,
-		cert:      cert,
-		proposer:  ids.NodeIDFromCert(cert),
+		timestamp:       timestamp,
+		cert:            cert,
+		proposer:        ids.NodeIDFromCert(cert),
+		acceptanceProof: acceptanceProof,
 	}
 	var blockIntf SignedBlock = block
 

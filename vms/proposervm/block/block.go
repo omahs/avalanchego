@@ -12,6 +12,7 @@ import (
 	"github.com/ava-labs/avalanchego/staking"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
+	"github.com/ava-labs/avalanchego/vms/platformvm/warp"
 )
 
 var (
@@ -35,6 +36,9 @@ type SignedBlock interface {
 	Block
 
 	PChainHeight() uint64
+	// AcceptanceProof is a warp signature over the P-Chain block id at
+	// PChainHeight.
+	AcceptanceProof() warp.Signature
 	Timestamp() time.Time
 	Proposer() ids.NodeID
 
@@ -42,22 +46,24 @@ type SignedBlock interface {
 }
 
 type statelessUnsignedBlock struct {
-	ParentID     ids.ID `serialize:"true"`
-	Timestamp    int64  `serialize:"true"`
-	PChainHeight uint64 `serialize:"true"`
-	Certificate  []byte `serialize:"true"`
-	Block        []byte `serialize:"true"`
+	ParentID        ids.ID `serialize:"true"`
+	Timestamp       int64  `serialize:"true"`
+	PChainHeight    uint64 `serialize:"true"`
+	AcceptanceProof []byte `serialize:"true"`
+	Certificate     []byte `serialize:"true"`
+	Block           []byte `serialize:"true"`
 }
 
 type statelessBlock struct {
 	StatelessBlock statelessUnsignedBlock `serialize:"true"`
 	Signature      []byte                 `serialize:"true"`
 
-	id        ids.ID
-	timestamp time.Time
-	cert      *staking.Certificate
-	proposer  ids.NodeID
-	bytes     []byte
+	id              ids.ID
+	timestamp       time.Time
+	cert            *staking.Certificate
+	proposer        ids.NodeID
+	acceptanceProof warp.Signature
+	bytes           []byte
 }
 
 func (b *statelessBlock) ID() ids.ID {
@@ -105,6 +111,10 @@ func (b *statelessBlock) PChainHeight() uint64 {
 	return b.StatelessBlock.PChainHeight
 }
 
+func (b *statelessBlock) AcceptanceProof() warp.Signature {
+	return b.acceptanceProof
+}
+
 func (b *statelessBlock) Timestamp() time.Time {
 	return b.timestamp
 }
@@ -129,9 +139,14 @@ func (b *statelessBlock) Verify(shouldHaveProposer bool, chainID ids.ID) error {
 	}
 
 	headerBytes := header.Bytes()
-	return staking.CheckSignature(
+	if err := staking.CheckSignature(
 		b.cert,
 		headerBytes,
 		b.Signature,
-	)
+	); err != nil {
+		return err
+	}
+
+	//return b.acceptanceProof.Verify()
+	return nil
 }

@@ -35,6 +35,7 @@ func TestBuild(t *testing.T) {
 		timestamp,
 		pChainHeight,
 		cert,
+		proof,
 		innerBlockBytes,
 		chainID,
 		key,

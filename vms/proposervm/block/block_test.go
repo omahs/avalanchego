@@ -34,7 +34,7 @@ func TestVerifyNoCertWithSignature(t *testing.T) {
 
 	require := require.New(t)
 
-	builtBlockIntf, err := BuildUnsigned(parentID, timestamp, pChainHeight, innerBlockBytes)
+	builtBlockIntf, err := BuildUnsigned(parentID, timestamp, pChainHeight, nil, innerBlockBytes)
 	require.NoError(err)
 
 	builtBlock := builtBlockIntf.(*statelessBlock)
@@ -56,6 +56,6 @@ func TestBlockSizeLimit(t *testing.T) {
 	innerBlockBytes := bytes.Repeat([]byte{0}, 270*units.KiB)
 
 	// with the large limit, it should be able to build large blocks
-	_, err := BuildUnsigned(parentID, timestamp, pChainHeight, innerBlockBytes)
+	_, err := BuildUnsigned(parentID, timestamp, pChainHeight, nil, innerBlockBytes)
 	require.NoError(err)
 }
