@@ -57,7 +57,7 @@ func (te *TestEnvironment) Marshal() []byte {
 }
 
 // Initialize a new test environment with a shared network (either pre-existing or newly created).
-func NewTestEnvironment(flagVars *FlagVars, desiredNetwork *tmpnet.Network) *TestEnvironment {
+func NewTestEnvironment(flagVars *FlagVars, desiredNetwork *tmpnet.Network, cleanupFunc func(args ...any)) *TestEnvironment {
 	require := require.New(ginkgo.GinkgoT())
 
 	var network *tmpnet.Network
@@ -113,6 +113,7 @@ func NewTestEnvironment(flagVars *FlagVars, desiredNetwork *tmpnet.Network) *Tes
 			flagVars.PluginDir(),
 			flagVars.NetworkShutdownDelay(),
 			flagVars.ReuseNetwork(),
+			cleanupFunc,
 		)
 
 		// Wait for chains to have bootstrapped on all nodes
@@ -190,7 +191,7 @@ func (te *TestEnvironment) NewKeychain(count int) *secp256k1fx.Keychain {
 }
 
 // Create a new private network that is not shared with other tests.
-func (te *TestEnvironment) StartPrivateNetwork(network *tmpnet.Network) {
+func (te *TestEnvironment) StartPrivateNetwork(network *tmpnet.Network, cleanupFunc func(args ...any)) {
 	// Use the same configuration as the shared network
 	sharedNetwork, err := tmpnet.ReadNetwork(te.NetworkDir)
 	te.require.NoError(err)
@@ -204,5 +205,6 @@ func (te *TestEnvironment) StartPrivateNetwork(network *tmpnet.Network) {
 		pluginDir,
 		te.PrivateNetworkShutdownDelay,
 		false, /* reuseNetwork */
+		cleanupFunc,
 	)
 }

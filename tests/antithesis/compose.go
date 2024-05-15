@@ -143,16 +143,13 @@ func newComposeProject(network *tmpnet.Network, nodeImageName string, workloadIm
 		uris[i] = fmt.Sprintf("http://%s:9650", address)
 	}
 
-	workloadEnv := types.Mapping{
-		"AVAWL_URIS": strings.Join(uris, " "),
-	}
-
 	workloadName := "workload"
 	services[0] = types.ServiceConfig{
 		Name:          workloadName,
 		ContainerName: workloadName,
 		Hostname:      workloadName,
 		Image:         workloadImageName,
+		Command:       "--uris=" + strings.Join(uris, " "),
 		Environment:   workloadEnv.ToMappingWithEquals(),
 		Networks: map[string]*types.ServiceNetworkConfig{
 			networkName: {

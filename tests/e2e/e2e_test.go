@@ -31,7 +31,7 @@ func TestE2E(t *testing.T) {
 var flagVars *e2e.FlagVars
 
 func init() {
-	flagVars = e2e.RegisterFlags()
+	flagVars = e2e.RegisterFlags(tmpnet.DefaultNodeCount)
 }
 
 var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
@@ -46,6 +46,7 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 			Nodes:   nodes,
 			Subnets: subnets,
 		},
+		ginkgo.DeferCleanup,
 	).Marshal()
 }, func(envBytes []byte) {
 	// Run in every ginkgo process

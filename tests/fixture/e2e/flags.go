@@ -13,6 +13,7 @@ import (
 )
 
 type FlagVars struct {
+	uris                 string
 	avalancheGoExecPath  string
 	pluginDir            string
 	networkDir           string
@@ -20,6 +21,10 @@ type FlagVars struct {
 	networkShutdownDelay time.Duration
 	stopNetwork          bool
 	nodeCount            int
+}
+
+func (v *FlagVars) NodeURIs() string {
+	return v.uris
 }
 
 func (v *FlagVars) AvalancheGoExecPath() string {
@@ -56,8 +61,14 @@ func (v *FlagVars) NodeCount() int {
 	return v.nodeCount
 }
 
-func RegisterFlags() *FlagVars {
+func RegisterFlags(defaultNodeCount int) *FlagVars {
 	vars := FlagVars{}
+	flag.StringVar(
+		&vars.uris,
+		"uris",
+		"",
+		"[optional] comma-separated list of node URIs to use for testing. If provided, a new network will not be started.",
+	)
 	flag.StringVar(
 		&vars.avalancheGoExecPath,
 		"avalanchego-path",
@@ -97,7 +108,7 @@ func RegisterFlags() *FlagVars {
 	flag.IntVar(
 		&vars.nodeCount,
 		"node-count",
-		tmpnet.DefaultNodeCount,
+		defaultNodeCount,
 		"number of nodes the network should initially consist of",
 	)
 

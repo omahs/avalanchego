@@ -15,117 +15,142 @@ import (
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/components/verify"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
+	"github.com/ava-labs/avalanchego/wallet/subnet/primary"
 
 	ginkgo "github.com/onsi/ginkgo/v2"
 )
 
-var _ = ginkgo.Describe("[Banff]", func() {
-	require := require.New(ginkgo.GinkgoT())
+type TestContext interface {
+	// Mirrors the signature of ginkgo.By
+	By(text string, callback func())
+	Require() *require.Assertions
+}
 
-	ginkgo.It("can send custom assets X->P and P->X",
-		func() {
-			keychain := e2e.Env.NewKeychain(1)
-			wallet := e2e.NewWallet(keychain, e2e.Env.GetRandomNodeURI())
+type ginkgoContext struct {
+	require *require.Assertions
+}
 
-			// Get the P-chain and the X-chain wallets
-			pWallet := wallet.P()
-			xWallet := wallet.X()
-			xBuilder := xWallet.Builder()
-			xContext := xBuilder.Context()
+func (c *ginkgoContext) By(text string, callback func()) {
+	ginkgo.By(text, callback)
+}
 
-			// Pull out useful constants to use when issuing transactions.
-			xChainID := xContext.BlockchainID
-			owner := &secp256k1fx.OutputOwners{
-				Threshold: 1,
-				Addrs: []ids.ShortID{
-					keychain.Keys[0].Address(),
+func (c *ginkgoContext) Require() *require.Assertions {
+	if c.require == nil {
+		c.require = require.New(ginkgo.GinkgoT())
+	}
+	return c.require
+}
+
+func SendCustomAssets(tc TestContext, wallet primary.Wallet, outputAddress ids.ShortID) {
+	require := tc.Require()
+
+	// Get the P-chain and the X-chain wallets
+	pWallet := wallet.P()
+	xWallet := wallet.X()
+	xBuilder := xWallet.Builder()
+	xContext := xBuilder.Context()
+
+	// Pull out useful constants to use when issuing transactions.
+	xChainID := xContext.BlockchainID
+	owner := &secp256k1fx.OutputOwners{
+		Threshold: 1,
+		Addrs: []ids.ShortID{
+			outputAddress,
+		},
+	}
+
+	var assetID ids.ID
+	tc.By("create new X-chain asset", func() {
+		assetTx, err := xWallet.IssueCreateAssetTx(
+			"RnM",
+			"RNM",
+			9,
+			map[uint32][]verify.State{
+				0: {
+					&secp256k1fx.TransferOutput{
+						Amt:          100 * units.Schmeckle,
+						OutputOwners: *owner,
+					},
 				},
-			}
+			},
+			e2e.WithDefaultContext(),
+		)
+		require.NoError(err)
+		assetID = assetTx.ID()
 
-			var assetID ids.ID
-			ginkgo.By("create new X-chain asset", func() {
-				assetTx, err := xWallet.IssueCreateAssetTx(
-					"RnM",
-					"RNM",
-					9,
-					map[uint32][]verify.State{
-						0: {
-							&secp256k1fx.TransferOutput{
-								Amt:          100 * units.Schmeckle,
-								OutputOwners: *owner,
-							},
-						},
+		tests.Outf("{{green}}created new X-chain asset{{/}}: %s\n", assetID)
+	})
+
+	tc.By("export new X-chain asset to P-chain", func() {
+		tx, err := xWallet.IssueExportTx(
+			constants.PlatformChainID,
+			[]*avax.TransferableOutput{
+				{
+					Asset: avax.Asset{
+						ID: assetID,
 					},
-					e2e.WithDefaultContext(),
-				)
-				require.NoError(err)
-				assetID = assetTx.ID()
-
-				tests.Outf("{{green}}created new X-chain asset{{/}}: %s\n", assetID)
-			})
-
-			ginkgo.By("export new X-chain asset to P-chain", func() {
-				tx, err := xWallet.IssueExportTx(
-					constants.PlatformChainID,
-					[]*avax.TransferableOutput{
-						{
-							Asset: avax.Asset{
-								ID: assetID,
-							},
-							Out: &secp256k1fx.TransferOutput{
-								Amt:          100 * units.Schmeckle,
-								OutputOwners: *owner,
-							},
-						},
+					Out: &secp256k1fx.TransferOutput{
+						Amt:          100 * units.Schmeckle,
+						OutputOwners: *owner,
 					},
-					e2e.WithDefaultContext(),
-				)
-				require.NoError(err)
+				},
+			},
+			e2e.WithDefaultContext(),
+		)
+		require.NoError(err)
 
-				tests.Outf("{{green}}issued X-chain export{{/}}: %s\n", tx.ID())
-			})
+		tests.Outf("{{green}}issued X-chain export{{/}}: %s\n", tx.ID())
+	})
 
-			ginkgo.By("import new asset from X-chain on the P-chain", func() {
-				tx, err := pWallet.IssueImportTx(
-					xChainID,
-					owner,
-					e2e.WithDefaultContext(),
-				)
-				require.NoError(err)
+	tc.By("import new asset from X-chain on the P-chain", func() {
+		tx, err := pWallet.IssueImportTx(
+			xChainID,
+			owner,
+			e2e.WithDefaultContext(),
+		)
+		require.NoError(err)
 
-				tests.Outf("{{green}}issued P-chain import{{/}}: %s\n", tx.ID())
-			})
+		tests.Outf("{{green}}issued P-chain import{{/}}: %s\n", tx.ID())
+	})
 
-			ginkgo.By("export asset from P-chain to the X-chain", func() {
-				tx, err := pWallet.IssueExportTx(
-					xChainID,
-					[]*avax.TransferableOutput{
-						{
-							Asset: avax.Asset{
-								ID: assetID,
-							},
-							Out: &secp256k1fx.TransferOutput{
-								Amt:          100 * units.Schmeckle,
-								OutputOwners: *owner,
-							},
-						},
+	tc.By("export asset from P-chain to the X-chain", func() {
+		tx, err := pWallet.IssueExportTx(
+			xChainID,
+			[]*avax.TransferableOutput{
+				{
+					Asset: avax.Asset{
+						ID: assetID,
 					},
-					e2e.WithDefaultContext(),
-				)
-				require.NoError(err)
+					Out: &secp256k1fx.TransferOutput{
+						Amt:          100 * units.Schmeckle,
+						OutputOwners: *owner,
+					},
+				},
+			},
+			e2e.WithDefaultContext(),
+		)
+		require.NoError(err)
 
-				tests.Outf("{{green}}issued P-chain export{{/}}: %s\n", tx.ID())
-			})
+		tests.Outf("{{green}}issued P-chain export{{/}}: %s\n", tx.ID())
+	})
 
-			ginkgo.By("import asset from P-chain on the X-chain", func() {
-				tx, err := xWallet.IssueImportTx(
-					constants.PlatformChainID,
-					owner,
-					e2e.WithDefaultContext(),
-				)
-				require.NoError(err)
+	tc.By("import asset from P-chain on the X-chain", func() {
+		tx, err := xWallet.IssueImportTx(
+			constants.PlatformChainID,
+			owner,
+			e2e.WithDefaultContext(),
+		)
+		require.NoError(err)
 
-				tests.Outf("{{green}}issued X-chain import{{/}}: %s\n", tx.ID())
-			})
-		})
+		tests.Outf("{{green}}issued X-chain import{{/}}: %s\n", tx.ID())
+	})
+
+}
+
+var _ = ginkgo.Describe("[Banff]", func() {
+	ginkgo.It("can send custom assets X->P and P->X", func() {
+		keychain := e2e.Env.NewKeychain(1)
+		wallet := e2e.NewWallet(keychain, e2e.Env.GetRandomNodeURI())
+		SendCustomAssets(&ginkgoContext{}, wallet, keychain.Keys[0].Address())
+	})
 })

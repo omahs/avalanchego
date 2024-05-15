@@ -6,16 +6,22 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"flag"
 	"log"
 	"math/big"
-	"os"
+	"strings"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/ava-labs/avalanchego/api/health"
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/genesis"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
+	"github.com/ava-labs/avalanchego/tests/e2e/banff"
+	"github.com/ava-labs/avalanchego/tests/fixture/e2e"
+	"github.com/ava-labs/avalanchego/tests/fixture/tmpnet"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
 	"github.com/ava-labs/avalanchego/utils/set"
@@ -37,19 +43,80 @@ import (
 
 const NumKeys = 5
 
-func main() {
-	c, err := NewConfig(os.Args)
-	if err != nil {
-		log.Fatalf("invalid config: %s", err)
+type testContext struct {
+	require *require.Assertions
+}
+
+// TODO(marun) callback should be varidict to allow for By without a callback
+func (c *testContext) By(text string, callback func()) {
+	log.Printf("running %q", text)
+	callback()
+}
+
+func (c *testContext) Require() *require.Assertions {
+	if c.require == nil {
+		c.require = require.New(&FakeTestingT{})
 	}
+	return c.require
+}
+
+type FakeTestingT struct{}
+
+func (t *FakeTestingT) Errorf(format string, args ...any) {
+	log.Printf(format, args...)
+}
+
+func (t *FakeTestingT) FailNow() {
+	log.Fatalf("failed")
+}
+
+func main() {
+	flagVars := e2e.RegisterFlags(NumKeys /* defaultNodeCount */)
+	flag.Parse()
 
 	ctx := context.Background()
-	awaitHealthyNodes(ctx, c.URIs)
+
+	uris := []string{}
+	if len(flagVars.NodeURIs()) > 0 {
+		uris := strings.Split(flagVars.NodeURIs(), ",")
+		awaitHealthyNodes(ctx, uris)
+	} else {
+		cleanupFuncs := []func(){}
+		registerCleanup := func(args ...any) {
+			if len(args) != 1 {
+				log.Fatalf("expected 1 argument, but got %d", len(args))
+			}
+			cleanupFunc, ok := args[0].(func())
+			if !ok {
+				log.Fatalf("expected argument to be of type func(), but got %T", args[0])
+			}
+			cleanupFuncs = append(cleanupFuncs, cleanupFunc)
+		}
+		env := e2e.NewTestEnvironment(
+			flagVars,
+			&tmpnet.Network{
+				Owner: "antithesis-avalanchego",
+				Nodes: tmpnet.NewNodesOrPanic(flagVars.NodeCount()),
+			},
+			registerCleanup,
+		)
+		defer func() {
+			for _, cleanupFunc := range cleanupFuncs {
+				cleanupFunc()
+			}
+		}()
+
+		network := env.GetNetwork()
+		for _, node := range network.Nodes {
+			uris = append(uris, node.URI)
+		}
+		// TODO(marun) Enable network teardown without ginkgo
+	}
 
 	kc := secp256k1fx.NewKeychain(genesis.EWOQKey)
 	walletSyncStartTime := time.Now()
 	wallet, err := primary.MakeWallet(ctx, &primary.WalletConfig{
-		URI:          c.URIs[0],
+		URI:          uris[0],
 		AVAXKeychain: kc,
 		EthKeychain:  kc,
 	})
@@ -62,13 +129,16 @@ func main() {
 		id:     0,
 		wallet: wallet,
 		addrs:  set.Of(genesis.EWOQKey.Address()),
-		uris:   c.URIs,
+		uris:   uris,
 	}
 
 	workloads := make([]*workload, NumKeys)
 	workloads[0] = genesisWorkload
 
 	var (
+		genesisPWallet  = wallet.P()
+		genesisPBuilder = genesisPWallet.Builder()
+		genesisPContext = genesisPBuilder.Context()
 		genesisXWallet  = wallet.X()
 		genesisXBuilder = genesisXWallet.Builder()
 		genesisXContext = genesisXBuilder.Context()
@@ -86,7 +156,7 @@ func main() {
 		)
 		baseTx, err := genesisXWallet.IssueBaseTx([]*avax.TransferableOutput{{
 			Asset: avax.Asset{
-				ID: avaxAssetID,
+				ID: genesisPContext.AVAXAssetID,
 			},
 			Out: &secp256k1fx.TransferOutput{
 				Amt: 100 * units.KiloAvax,
@@ -106,7 +176,30 @@ func main() {
 
 		genesisWorkload.confirmXChainTx(ctx, baseTx)
 
-		uri := c.URIs[i%len(c.URIs)]
+		basePStartTime := time.Now()
+		basePTx, err := genesisPWallet.IssueBaseTx([]*avax.TransferableOutput{{
+			Asset: avax.Asset{
+				ID: avaxAssetID,
+			},
+			Out: &secp256k1fx.TransferOutput{
+				Amt: 100 * units.KiloAvax,
+				OutputOwners: secp256k1fx.OutputOwners{
+					Threshold: 1,
+					Addrs: []ids.ShortID{
+						addr,
+					},
+				},
+			},
+		}})
+		if err != nil {
+			log.Printf("failed to issue initial funding P-chain baseTx: %s", err)
+			return
+		}
+		log.Printf("issued initial funding P-chain baseTx %s in %s", basePTx.ID(), time.Since(basePStartTime))
+
+		genesisWorkload.confirmPChainTx(ctx, basePTx)
+
+		uri := uris[i%len(uris)]
 		kc := secp256k1fx.NewKeychain(key)
 		walletSyncStartTime := time.Now()
 		wallet, err := primary.MakeWallet(ctx, &primary.WalletConfig{
@@ -123,7 +216,7 @@ func main() {
 			id:     i,
 			wallet: wallet,
 			addrs:  set.Of(addr),
-			uris:   c.URIs,
+			uris:   uris,
 		}
 	}
 
@@ -201,8 +294,10 @@ func (w *workload) run(ctx context.Context) {
 	)
 	log.Printf("wallet starting with %d X-chain nAVAX and %d P-chain nAVAX", xAVAX, pAVAX)
 
+	testContext := &testContext{}
+
 	for {
-		val, err := rand.Int(rand.Reader, big.NewInt(5))
+		val, err := rand.Int(rand.Reader, big.NewInt(6))
 		if err != nil {
 			log.Fatalf("failed to read randomness: %s", err)
 		}
@@ -220,6 +315,9 @@ func (w *workload) run(ctx context.Context) {
 			w.issueXToPTransfer(ctx)
 		case 4:
 			w.issuePToXTransfer(ctx)
+		case 5:
+			addr, _ := w.addrs.Peek()
+			banff.SendCustomAssets(testContext, w.wallet, addr)
 		}
 
 		val, err = rand.Int(rand.Reader, big.NewInt(int64(time.Second)))

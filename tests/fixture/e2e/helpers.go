@@ -84,9 +84,11 @@ func NewEthClient(nodeURI tmpnet.NodeURI) ethclient.Client {
 
 // Helper simplifying use of a timed context by canceling the context on ginkgo teardown.
 func ContextWithTimeout(duration time.Duration) context.Context {
-	ctx, cancel := context.WithTimeout(context.Background(), duration)
-	ginkgo.DeferCleanup(cancel)
-	return ctx
+	return context.Background()
+	// TODO(marun) Need to enable the cleanup function to be configurable? Or ensure cleanup at the right time some other way?
+	// ctx, cancel := context.WithTimeout(context.Background(), duration)
+	// ginkgo.DeferCleanup(cancel)
+	// return ctx
 }
 
 // Helper simplifying use of a timed context configured with the default timeout.
@@ -222,6 +224,7 @@ func StartNetwork(
 	pluginDir string,
 	shutdownDelay time.Duration,
 	reuseNetwork bool,
+	cleanupFunc func(args ...any),
 ) {
 	require := require.New(ginkgo.GinkgoT())
 
@@ -248,7 +251,7 @@ func StartNetwork(
 		tests.Outf("{{green}}Symlinked %s to %s to enable reuse{{/}}\n", network.Dir, symlinkPath)
 	}
 
-	ginkgo.DeferCleanup(func() {
+	cleanupFunc(func() {
 		if reuseNetwork {
 			tests.Outf("{{yellow}}Skipping shutdown for network %s (symlinked to %s) to enable reuse{{/}}\n", network.Dir, symlinkPath)
 			return
