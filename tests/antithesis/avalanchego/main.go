@@ -67,6 +67,7 @@ func (t *FakeTestingT) Errorf(format string, args ...any) {
 }
 
 func (t *FakeTestingT) FailNow() {
+	// TODO(marun) Need to panic here and recover in the test runner
 	log.Fatalf("failed")
 }
 
