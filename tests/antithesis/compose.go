@@ -222,8 +222,7 @@ func newComposeProject(network *tmpnet.Network, nodeImageName string, workloadIm
 func keyMapToEnvVarMap(keyMap types.Mapping) types.Mapping {
 	envVarMap := make(types.Mapping, len(keyMap))
 	for key, val := range keyMap {
-		// e.g. network-id -> AVAGO_NETWORK_ID
-		envVar := strings.ToUpper(config.EnvPrefix + "_" + config.DashesToUnderscores.Replace(key))
+		envVar := config.KeyToEnvVar(key)
 		envVarMap[envVar] = val
 	}
 	return envVarMap

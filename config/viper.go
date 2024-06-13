@@ -19,6 +19,11 @@ const EnvPrefix = "avago"
 
 var DashesToUnderscores = strings.NewReplacer("-", "_")
 
+// Converts the key into its env var equivalent e.g. network-id -> AVAGO_NETWORK_ID
+func KeyToEnvVar(key string) string {
+	return strings.ToUpper(EnvPrefix + "_" + DashesToUnderscores.Replace(key))
+}
+
 // BuildViper returns the viper environment from parsing config file from
 // default search paths and any parsed command line flags
 func BuildViper(fs *pflag.FlagSet, args []string) (*viper.Viper, error) {
