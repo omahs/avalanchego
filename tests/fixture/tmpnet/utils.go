@@ -8,8 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"syscall"
 	"time"
 
+	"github.com/ava-labs/avalanchego/api/health"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
 )
@@ -19,6 +22,29 @@ const (
 )
 
 var ErrNotRunning = errors.New("not running")
+
+func CheckNodeHealth(ctx context.Context, uri string) (bool, error) {
+	// Check that the node is reporting healthy
+	health, err := health.NewClient(uri).Health(ctx, nil)
+	if err == nil {
+		return health.Healthy, nil
+	}
+
+	switch t := err.(type) {
+	case *net.OpError:
+		if t.Op == "read" {
+			// Connection refused - potentially recoverable
+			return false, nil
+		}
+	case syscall.Errno:
+		if t == syscall.ECONNREFUSED {
+			// Connection refused - potentially recoverable
+			return false, nil
+		}
+	}
+	// Assume all other errors are not recoverable
+	return false, fmt.Errorf("failed to query node health: %w", err)
+}
 
 // WaitForHealthy blocks until Node.IsHealthy returns true or an error (including context timeout) is observed.
 func WaitForHealthy(ctx context.Context, node *Node) error {
