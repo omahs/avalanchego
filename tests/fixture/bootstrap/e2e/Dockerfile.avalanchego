@@ -1,0 +1,11 @@
+# TODO(marun) Figure out why the default image takes so long to build
+
+FROM ubuntu:jammy
+
+# Maintain compatibility with previous images
+RUN mkdir -p /avalancheg2o/build
+WORKDIR /avalanchego/build
+
+COPY ./build/avalanchego .
+
+ENTRYPOINT [ "./avalanchego" ]
