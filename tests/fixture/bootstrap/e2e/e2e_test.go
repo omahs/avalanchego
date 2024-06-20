@@ -29,12 +29,14 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 
+	"github.com/ava-labs/avalanchego/api/info"
 	"github.com/ava-labs/avalanchego/config"
 	"github.com/ava-labs/avalanchego/tests"
 	"github.com/ava-labs/avalanchego/tests/fixture/bootstrap"
 	"github.com/ava-labs/avalanchego/tests/fixture/e2e"
 	"github.com/ava-labs/avalanchego/tests/fixture/tmpnet"
 	"github.com/ava-labs/avalanchego/utils/constants"
+	"github.com/ava-labs/avalanchego/version"
 
 	// "github.com/ava-labs/avalanchego/tests/fixture/tmpnet"
 
@@ -42,7 +44,7 @@ import (
 )
 
 const (
-	imageCurrent  = false
+	imageCurrent  = true
 	containerName = "avalanchego"
 )
 
@@ -54,7 +56,7 @@ var _ = ginkgo.BeforeSuite(func() {
 	require := require.New(ginkgo.GinkgoT())
 
 	// TODO(marun) Support configuring the registry via a flag
-	imageName := "localhost:5001/avalanchego:latest"
+	imageName := "avalanchego:latest"
 
 	if imageCurrent {
 		tests.Outf("{{yellow}}avalanchego image is up-to-date. skipping image build{{/}}\n")
@@ -79,10 +81,10 @@ var _ = ginkgo.BeforeSuite(func() {
 			filepath.Join(repoRoot, relativePath, "Dockerfile.avalanchego"),
 			imageName,
 		))
-
-		ginkgo.By("Pushing the avalanchego image to the cluster's local registry")
-		require.NoError(pushDockerImage(e2e.DefaultContext(), imageName))
 	}
+
+	ginkgo.By("Loading the image to the kind cluster")
+	require.NoError(loadDockerImage(e2e.DefaultContext(), imageName))
 
 	ginkgo.By("Configuring a kubernetes client")
 	kubeconfigPath := os.Getenv("KUBECONFIG")
@@ -102,29 +104,6 @@ var _ = ginkgo.BeforeSuite(func() {
 	createdNamespace, err := clientset.CoreV1().Namespaces().Create(e2e.DefaultContext(), namespace, metav1.CreateOptions{})
 	require.NoError(err)
 
-	// service, err := clientset.CoreV1().Services(createdNamespace.Name).Create(e2e.DefaultContext(),
-	// 	&corev1.Service{
-	// 		ObjectMeta: metav1.ObjectMeta{
-	// 			Name: "single-node-network",
-	// 		},
-	// 		Spec: corev1.ServiceSpec{
-	// 			Type: corev1.ServiceTypeClusterIP,
-	// 			Selector: map[string]string{
-	// 				"app": "single-node-network",
-	// 			},
-	// 			Ports: []corev1.ServicePort{
-	// 				{
-	// 					Name:       "http",
-	// 					Port:       config.DefaultHTTPPort,
-	// 					TargetPort: intstr.FromInt(config.DefaultHTTPPort),
-	// 				},
-	// 			},
-	// 		},
-	// 	},
-	// 	metav1.CreateOptions{},
-	// )
-	// require.NoError(err)
-
 	flags := map[string]string{
 		config.NetworkNameKey:            constants.LocalName,
 		config.SybilProtectionEnabledKey: "false",
@@ -134,23 +113,27 @@ var _ = ginkgo.BeforeSuite(func() {
 		config.LogLevelKey:               logging.Debug.String(),
 	}
 
+	ginkgo.By("Creating a pod for a single-node network")
 	createdPod := startNodePod(e2e.DefaultContext(), clientset, createdNamespace.Name, imageName, flags, nil)
 	require.NoError(waitForPodStatus(e2e.DefaultContext(), clientset, createdPod.Namespace, createdPod.Name, podIsRunning))
+
+	bootstrapIP, err := bootstrap.WaitForPodIP(e2e.DefaultContext(), clientset, createdPod.Namespace, createdPod.Name)
+	require.NoError(err)
 
 	// TODO(marun) Tunnel through the kube api to the pod's HTTP port
 
 	// localPort := enableLocalForwardForPodKubectl(service.Namespace, service.Name, config.DefaultHTTPPort)
 
-	localPort, stopChan := enableLocalForwardForPodClientGo(kubeConfig, createdPod.Namespace, createdPod.Name, config.DefaultHTTPPort)
+	localPort, localPortStopChan := enableLocalForwardForPodClientGo(kubeConfig, createdPod.Namespace, createdPod.Name, config.DefaultHTTPPort)
 	ginkgo.DeferCleanup(func() {
-		close(stopChan)
+		close(localPortStopChan)
 	})
 
-	nodeURI := fmt.Sprintf("http://127.0.0.1:%d", localPort)
+	localNodeURI := fmt.Sprintf("http://127.0.0.1:%d", localPort)
 
-	ginkgo.By(fmt.Sprintf("Waiting for the pod to report a healthy status at %s", nodeURI))
+	ginkgo.By(fmt.Sprintf("Waiting for the pod to report a healthy status at %s", localNodeURI))
 	require.Eventually(func() bool {
-		healthy, err := tmpnet.CheckNodeHealth(e2e.DefaultContext(), nodeURI)
+		healthy, err := tmpnet.CheckNodeHealth(e2e.DefaultContext(), localNodeURI)
 		if err != nil {
 			tests.Outf("Error checking node health: %s", err)
 			return false
@@ -158,8 +141,34 @@ var _ = ginkgo.BeforeSuite(func() {
 		return healthy
 	}, e2e.DefaultTimeout, e2e.DefaultPollingInterval)
 
-	versionPod := startNodePod(e2e.DefaultContext(), clientset, createdNamespace.Name, imageName, flags, []string{"--version"})
+	// TODO(marun) Get the current latest image and start a pod to check its version and digest.
+	// TODO(marun) Start bootstrap pods with imagename:sha256:version to ensure the specific version is used
+	// TODO(marun) Reference the pod uuid in the test output for traceability
+	// - bootstrap config {network, bootstrapType}
+	//   - image digest (and associated avalanchego version info )
+	//   - pod details {uuid, createdTimestamp}
+	//   - what else?
+	// TODO(marun) Enable timeout?
+	ginkgo.By("Starting a pod to check the avalanchego version and image digest of the image tagged with 'latest'")
+
+	versionPod := startNodePod(e2e.DefaultContext(), clientset, createdNamespace.Name, imageName, flags, []string{"--version-json"})
 	require.NoError(waitForPodStatus(e2e.DefaultContext(), clientset, versionPod.Namespace, versionPod.Name, podHasTerminated))
+
+	versionPod, err = clientset.CoreV1().Pods(versionPod.Namespace).Get(e2e.DefaultContext(), versionPod.Name, metav1.GetOptions{})
+	require.NoError(err)
+
+	// Get the image id for the avalanchego image
+	imageID := ""
+	for _, status := range versionPod.Status.ContainerStatuses {
+		if status.Name == containerName {
+			imageID = status.ImageID
+			break
+		}
+	}
+	require.NotEmpty(imageID)
+	imageIDParts := strings.Split(imageID, ":")
+	require.Len(imageIDParts, 2)
+	//imageSHA := imageIDParts[1]
 
 	// Request the logs
 	req := clientset.CoreV1().Pods(versionPod.Namespace).GetLogs(versionPod.Name, &corev1.PodLogOptions{
@@ -175,13 +184,44 @@ var _ = ginkgo.BeforeSuite(func() {
 	bytes, err := io.ReadAll(readCloser)
 	require.NoError(err)
 
-	versions := map[string]string{}
+	versions := &version.Versions{}
 	require.NoError(json.Unmarshal(bytes, &versions))
 
 	// Delete the pod
 	require.NoError(clientset.CoreV1().Pods(versionPod.Namespace).Delete(e2e.DefaultContext(), versionPod.Name, metav1.DeleteOptions{}))
 
-	// TODO(marun) Create node to bootstrap from the single-node network
+	infoClient := info.NewClient(localNodeURI)
+	bootstrapNodeID, _, err := infoClient.GetNodeID(e2e.DefaultContext())
+	require.NoError(err)
+
+	// TODO(marun) Use the image id from the version check as the image to bootstrap with
+	bootstrappingImage := imageName
+
+	ginkgo.By("Creating a pod to validate bootstrap")
+
+	// Create node to bootstrap from the single-node network
+	flags[config.BootstrapIPsKey] = fmt.Sprintf("%s:%d", bootstrapIP, config.DefaultStakingPort)
+	flags[config.BootstrapIDsKey] = bootstrapNodeID.String()
+	// Uses the image ID instead of image name to use a known version of the image
+	bootstrappingPod := startNodePod(e2e.DefaultContext(), clientset, createdNamespace.Name, bootstrappingImage, flags, nil)
+	require.NoError(waitForPodStatus(e2e.DefaultContext(), clientset, bootstrappingPod.Namespace, bootstrappingPod.Name, podIsRunning))
+
+	localBootstrappingPort, localBootstrappingStopChan := enableLocalForwardForPodClientGo(kubeConfig, bootstrappingPod.Namespace, bootstrappingPod.Name, config.DefaultHTTPPort)
+	ginkgo.DeferCleanup(func() {
+		close(localBootstrappingStopChan)
+	})
+
+	localBootstrappingURI := fmt.Sprintf("http://127.0.0.1:%d", localBootstrappingPort)
+
+	ginkgo.By(fmt.Sprintf("Waiting for the bootstrapping pod to report a healthy status at %s", localBootstrappingURI))
+	require.Eventually(func() bool {
+		healthy, err := tmpnet.CheckNodeHealth(e2e.DefaultContext(), localBootstrappingURI)
+		if err != nil {
+			tests.Outf("Error checking node health: %s", err)
+			return false
+		}
+		return healthy
+	}, e2e.DefaultTimeout, e2e.DefaultPollingInterval)
 
 	// Write status somewhere
 	// - to configmap in the cluster
@@ -191,11 +231,11 @@ var _ = ginkgo.BeforeSuite(func() {
 func startNodePod(ctx context.Context, clientset *kubernetes.Clientset, namespace string, imageName string, flags map[string]string, args []string) *corev1.Pod {
 	require := require.New(ginkgo.GinkgoT())
 
-	ginkgo.By("Creating a pod for a single-node network")
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "single-node-network",
+			GenerateName: "avalanche-node",
 			Labels: map[string]string{
+				// TODO(marun) What is the purpose of this label?
 				"app": "single-node-network",
 			},
 		},
@@ -207,6 +247,8 @@ func startNodePod(ctx context.Context, clientset *kubernetes.Clientset, namespac
 					Args:    args,
 					Image:   imageName,
 					Env:     bootstrap.StringMapToEnvVarSlice(flags),
+					// Images are loaded manually for testing purposes
+					ImagePullPolicy: corev1.PullNever,
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -254,8 +296,8 @@ func buildDockerImage(ctx context.Context, goVersion string, buildPath string, d
 	return runCommand(cmd)
 }
 
-func pushDockerImage(ctx context.Context, imageName string) error {
-	return runCommand(exec.CommandContext(ctx, "docker", "push", imageName))
+func loadDockerImage(ctx context.Context, imageName string) error {
+	return runCommand(exec.CommandContext(ctx, "kind", "load", "docker-image", imageName))
 }
 
 // runCommand runs the provided command and captures output to stdout and stderr so if an
