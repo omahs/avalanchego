@@ -5,9 +5,7 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,7 +18,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/ava-labs/avalanchego/utils/logging"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -36,9 +33,7 @@ import (
 	"github.com/ava-labs/avalanchego/tests/fixture/e2e"
 	"github.com/ava-labs/avalanchego/tests/fixture/tmpnet"
 	"github.com/ava-labs/avalanchego/utils/constants"
-	"github.com/ava-labs/avalanchego/version"
-
-	// "github.com/ava-labs/avalanchego/tests/fixture/tmpnet"
+	"github.com/ava-labs/avalanchego/utils/logging"
 
 	ginkgo "github.com/onsi/ginkgo/v2"
 )
@@ -46,6 +41,7 @@ import (
 const (
 	imageCurrent  = true
 	containerName = "avalanchego"
+	pvcSize       = "128Mi"
 )
 
 func TestE2E(t *testing.T) {
@@ -56,7 +52,7 @@ var _ = ginkgo.BeforeSuite(func() {
 	require := require.New(ginkgo.GinkgoT())
 
 	// TODO(marun) Support configuring the registry via a flag
-	imageName := "avalanchego:latest"
+	imageName := "localhost:5001/avalanchego:latest"
 
 	if imageCurrent {
 		tests.Outf("{{yellow}}avalanchego image is up-to-date. skipping image build{{/}}\n")
@@ -71,7 +67,7 @@ var _ = ginkgo.BeforeSuite(func() {
 		require.True(ok, "Couldn't read build info")
 		goVersion := strings.TrimPrefix(info.GoVersion, "go")
 
-		// Build and push the avalanchego image
+		// Build the avalanchego image
 
 		ginkgo.By("Building the avalanchego image")
 		require.NoError(buildDockerImage(
@@ -96,13 +92,14 @@ var _ = ginkgo.BeforeSuite(func() {
 	// TODO(marun) Consider optionally deleting namespaces
 
 	ginkgo.By("Creating a kube namespace to ensure isolation between test runs")
-	namespace := &corev1.Namespace{
+	namespaceSpec := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "bootstrap-test-e2e-",
 		},
 	}
-	createdNamespace, err := clientset.CoreV1().Namespaces().Create(e2e.DefaultContext(), namespace, metav1.CreateOptions{})
+	createdNamespace, err := clientset.CoreV1().Namespaces().Create(e2e.DefaultContext(), namespaceSpec, metav1.CreateOptions{})
 	require.NoError(err)
+	namespace := createdNamespace.Name
 
 	flags := map[string]string{
 		config.NetworkNameKey:            constants.LocalName,
@@ -114,17 +111,31 @@ var _ = ginkgo.BeforeSuite(func() {
 	}
 
 	ginkgo.By("Creating a pod for a single-node network")
-	createdPod := startNodePod(e2e.DefaultContext(), clientset, createdNamespace.Name, imageName, flags, nil)
-	require.NoError(waitForPodStatus(e2e.DefaultContext(), clientset, createdPod.Namespace, createdPod.Name, podIsRunning))
+	networkPod, err := bootstrap.StartNodePod(
+		e2e.DefaultContext(),
+		clientset,
+		namespace,
+		imageName,
+		pvcSize,
+		flags,
+	)
+	require.NoError(err)
+	require.NoError(bootstrap.WaitForPodStatus(
+		e2e.DefaultContext(),
+		clientset,
+		namespace,
+		networkPod.Name,
+		bootstrap.PodIsRunning,
+	))
 
-	bootstrapIP, err := bootstrap.WaitForPodIP(e2e.DefaultContext(), clientset, createdPod.Namespace, createdPod.Name)
+	bootstrapIP, err := bootstrap.WaitForPodIP(e2e.DefaultContext(), clientset, namespace, networkPod.Name)
 	require.NoError(err)
 
 	// TODO(marun) Tunnel through the kube api to the pod's HTTP port
 
 	// localPort := enableLocalForwardForPodKubectl(service.Namespace, service.Name, config.DefaultHTTPPort)
 
-	localPort, localPortStopChan := enableLocalForwardForPodClientGo(kubeConfig, createdPod.Namespace, createdPod.Name, config.DefaultHTTPPort)
+	localPort, localPortStopChan := enableLocalForwardForPodClientGo(kubeConfig, namespace, networkPod.Name, config.DefaultHTTPPort)
 	ginkgo.DeferCleanup(func() {
 		close(localPortStopChan)
 	})
@@ -141,54 +152,11 @@ var _ = ginkgo.BeforeSuite(func() {
 		return healthy
 	}, e2e.DefaultTimeout, e2e.DefaultPollingInterval)
 
-	// TODO(marun) Get the current latest image and start a pod to check its version and digest.
-	// TODO(marun) Start bootstrap pods with imagename:sha256:version to ensure the specific version is used
-	// TODO(marun) Reference the pod uuid in the test output for traceability
-	// - bootstrap config {network, bootstrapType}
-	//   - image digest (and associated avalanchego version info )
-	//   - pod details {uuid, createdTimestamp}
-	//   - what else?
-	// TODO(marun) Enable timeout?
+	// TODO(marun) Expose version detection from a cmd
 	ginkgo.By("Starting a pod to check the avalanchego version and image digest of the image tagged with 'latest'")
 
-	versionPod := startNodePod(e2e.DefaultContext(), clientset, createdNamespace.Name, imageName, flags, []string{"--version-json"})
-	require.NoError(waitForPodStatus(e2e.DefaultContext(), clientset, versionPod.Namespace, versionPod.Name, podHasTerminated))
-
-	versionPod, err = clientset.CoreV1().Pods(versionPod.Namespace).Get(e2e.DefaultContext(), versionPod.Name, metav1.GetOptions{})
+	_, err = bootstrap.GetImageVersions(e2e.DefaultContext(), clientset, namespace, imageName)
 	require.NoError(err)
-
-	// Get the image id for the avalanchego image
-	imageID := ""
-	for _, status := range versionPod.Status.ContainerStatuses {
-		if status.Name == containerName {
-			imageID = status.ImageID
-			break
-		}
-	}
-	require.NotEmpty(imageID)
-	imageIDParts := strings.Split(imageID, ":")
-	require.Len(imageIDParts, 2)
-	//imageSHA := imageIDParts[1]
-
-	// Request the logs
-	req := clientset.CoreV1().Pods(versionPod.Namespace).GetLogs(versionPod.Name, &corev1.PodLogOptions{
-		Container: containerName,
-	})
-
-	// Stream the logs
-	readCloser, err := req.Stream(e2e.DefaultContext())
-	require.NoError(err)
-	defer readCloser.Close()
-
-	// Read and print the logs
-	bytes, err := io.ReadAll(readCloser)
-	require.NoError(err)
-
-	versions := &version.Versions{}
-	require.NoError(json.Unmarshal(bytes, &versions))
-
-	// Delete the pod
-	require.NoError(clientset.CoreV1().Pods(versionPod.Namespace).Delete(e2e.DefaultContext(), versionPod.Name, metav1.DeleteOptions{}))
 
 	infoClient := info.NewClient(localNodeURI)
 	bootstrapNodeID, _, err := infoClient.GetNodeID(e2e.DefaultContext())
@@ -197,16 +165,20 @@ var _ = ginkgo.BeforeSuite(func() {
 	// TODO(marun) Use the image id from the version check as the image to bootstrap with
 	bootstrappingImage := imageName
 
+	// TODO(marun) Factor this out to call in a command. Use a pvc
+	// Enable configuration of pod annotations (i.e. for datadog)
+	// e.g. startBootstrapper(kubeconfig, flags (which network and which sync method), annotations (datadog collection))
 	ginkgo.By("Creating a pod to validate bootstrap")
 
 	// Create node to bootstrap from the single-node network
 	flags[config.BootstrapIPsKey] = fmt.Sprintf("%s:%d", bootstrapIP, config.DefaultStakingPort)
 	flags[config.BootstrapIDsKey] = bootstrapNodeID.String()
 	// Uses the image ID instead of image name to use a known version of the image
-	bootstrappingPod := startNodePod(e2e.DefaultContext(), clientset, createdNamespace.Name, bootstrappingImage, flags, nil)
-	require.NoError(waitForPodStatus(e2e.DefaultContext(), clientset, bootstrappingPod.Namespace, bootstrappingPod.Name, podIsRunning))
+	bootstrappingPod, err := bootstrap.StartNodePod(e2e.DefaultContext(), clientset, namespace, bootstrappingImage, pvcSize, flags)
+	require.NoError(err)
+	require.NoError(bootstrap.WaitForPodStatus(e2e.DefaultContext(), clientset, namespace, bootstrappingPod.Name, bootstrap.PodIsRunning))
 
-	localBootstrappingPort, localBootstrappingStopChan := enableLocalForwardForPodClientGo(kubeConfig, bootstrappingPod.Namespace, bootstrappingPod.Name, config.DefaultHTTPPort)
+	localBootstrappingPort, localBootstrappingStopChan := enableLocalForwardForPodClientGo(kubeConfig, namespace, bootstrappingPod.Name, config.DefaultHTTPPort)
 	ginkgo.DeferCleanup(func() {
 		close(localBootstrappingStopChan)
 	})
@@ -223,51 +195,22 @@ var _ = ginkgo.BeforeSuite(func() {
 		return healthy
 	}, e2e.DefaultTimeout, e2e.DefaultPollingInterval)
 
+	// TODO(marun) Start bootstrap pods with imagename:sha256:version to ensure the specific version is used
+	// TODO(marun) Reference the pod uuid (or namespace+name?) in the test output for traceability
+	// - bootstrap config {network, bootstrapType}
+	//   - image digest (and associated avalanchego version info )
+	//   - pod details {uuid, createdTimestamp}
+	//   - what else?
+	// TODO(marun) Enable timeout?
+
+	// TOOD(marun) Determine the duration of execution
+	// TODO(marun) Should there be a timeout?
+	// TODO(marun) What details to collect
+	// -
 	// Write status somewhere
 	// - to configmap in the cluster
 
 })
-
-func startNodePod(ctx context.Context, clientset *kubernetes.Clientset, namespace string, imageName string, flags map[string]string, args []string) *corev1.Pod {
-	require := require.New(ginkgo.GinkgoT())
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "avalanche-node",
-			Labels: map[string]string{
-				// TODO(marun) What is the purpose of this label?
-				"app": "single-node-network",
-			},
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    containerName,
-					Command: []string{"./avalanchego"},
-					Args:    args,
-					Image:   imageName,
-					Env:     bootstrap.StringMapToEnvVarSlice(flags),
-					// Images are loaded manually for testing purposes
-					ImagePullPolicy: corev1.PullNever,
-				},
-			},
-			RestartPolicy: corev1.RestartPolicyNever,
-		},
-	}
-	createdPod, err := clientset.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
-	require.NoError(err)
-
-	// defer func() {
-	// 	err := clientset.CoreV1().Pods(createdNamespace.Name).Delete(e2e.DefaultContext(), createdPod.Name, metav1.DeleteOptions{})
-	// 	require.NoError(err)
-	// }()
-
-	// ginkgo.By("Waiting for the pod's IP address to be reported in its status")
-	// bootstrapIP, err := bootstrap.WaitForPodIP(e2e.DefaultContext(), clientset, createdNamespace.Name, createdPod.Name)
-	// require.NoError(err)
-
-	return createdPod
-}
 
 var _ = ginkgo.Describe("[Bootstrap Tester]", func() {
 	require := require.New(ginkgo.GinkgoT())
@@ -324,49 +267,6 @@ func getRepoRootPath(suffix string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSuffix(cwd, suffix), nil
-}
-
-func podIsRunning(status *corev1.PodStatus) bool {
-	if status.Phase != corev1.PodRunning {
-		return false
-	}
-
-	for _, containerStatus := range status.ContainerStatuses {
-		if !containerStatus.Ready {
-			return false
-		}
-	}
-	return true
-}
-
-func podHasTerminated(status *corev1.PodStatus) bool {
-	return status.Phase == corev1.PodSucceeded || status.Phase == corev1.PodFailed
-}
-
-// waitForPodReady waits for a pod to be ready.
-func waitForPodStatus(ctx context.Context, clientset *kubernetes.Clientset, namespace string, name string, acceptable func(*corev1.PodStatus) bool) error {
-	watch, err := clientset.CoreV1().Pods(namespace).Watch(ctx, metav1.SingleObject(metav1.ObjectMeta{Name: name}))
-	if err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case event := <-watch.ResultChan():
-			pod, ok := event.Object.(*corev1.Pod)
-			if !ok {
-				return fmt.Errorf("expected pod type")
-			}
-
-			if acceptable(&pod.Status) {
-				return nil
-			}
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for pod readiness")
-		}
-	}
-
-	return nil
 }
 
 // enableLocalForwardForPodKubectl enables traffic forwarding from a local port to the specified pod with kubectl.

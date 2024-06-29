@@ -66,6 +66,54 @@ func WaitForPodIP(ctx context.Context, clientset kubernetes.Interface, namespace
 	}
 }
 
+func WaitForPodStatus(
+	ctx context.Context,
+	clientset *kubernetes.Clientset,
+	namespace string,
+	name string,
+	acceptable func(*corev1.PodStatus) bool,
+) error {
+	watch, err := clientset.CoreV1().Pods(namespace).Watch(ctx, metav1.SingleObject(metav1.ObjectMeta{Name: name}))
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case event := <-watch.ResultChan():
+			pod, ok := event.Object.(*corev1.Pod)
+			if !ok {
+				return fmt.Errorf("expected pod type")
+			}
+
+			if acceptable(&pod.Status) {
+				return nil
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for pod readiness")
+		}
+	}
+
+	return nil
+}
+
+func PodIsRunning(status *corev1.PodStatus) bool {
+	if status.Phase != corev1.PodRunning {
+		return false
+	}
+
+	for _, containerStatus := range status.ContainerStatuses {
+		if !containerStatus.Ready {
+			return false
+		}
+	}
+	return true
+}
+
+func PodHasTerminated(status *corev1.PodStatus) bool {
+	return status.Phase == corev1.PodSucceeded || status.Phase == corev1.PodFailed
+}
+
 func StringMapToEnvVarSlice(mapping map[string]string) []corev1.EnvVar {
 	envVars := make([]corev1.EnvVar, len(mapping))
 	var i int
