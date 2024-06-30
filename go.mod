@@ -36,7 +36,6 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.42.0
-	github.com/regclient/regclient v0.6.1
 	github.com/rs/cors v1.7.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/spf13/cast v1.5.0
@@ -98,7 +97,6 @@ require (
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/dop251/goja v0.0.0-20230806174421-c933cf95e127 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/ethereum/c-kzg-4844 v0.4.0 // indirect
@@ -169,7 +167,6 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
-	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/urfave/cli/v2 v2.25.7 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect

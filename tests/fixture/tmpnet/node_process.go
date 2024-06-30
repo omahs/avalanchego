@@ -172,7 +172,11 @@ func (p *NodeProcess) IsHealthy(ctx context.Context) (bool, error) {
 		return false, ErrNotRunning
 	}
 
-	return CheckNodeHealth(ctx, p.node.URI)
+	healthReply, err := CheckNodeHealth(ctx, p.node.URI)
+	if err != nil {
+		return false, err
+	}
+	return healthReply.Healthy, nil
 }
 
 func (p *NodeProcess) getProcessContextPath() string {

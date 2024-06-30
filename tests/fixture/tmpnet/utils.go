@@ -23,27 +23,27 @@ const (
 
 var ErrNotRunning = errors.New("not running")
 
-func CheckNodeHealth(ctx context.Context, uri string) (bool, error) {
+func CheckNodeHealth(ctx context.Context, uri string) (*health.APIReply, error) {
 	// Check that the node is reporting healthy
-	health, err := health.NewClient(uri).Health(ctx, nil)
+	healthReply, err := health.NewClient(uri).Health(ctx, nil)
 	if err == nil {
-		return health.Healthy, nil
+		return healthReply, nil
 	}
 
 	switch t := err.(type) {
 	case *net.OpError:
 		if t.Op == "read" {
 			// Connection refused - potentially recoverable
-			return false, nil
+			return nil, nil
 		}
 	case syscall.Errno:
 		if t == syscall.ECONNREFUSED {
 			// Connection refused - potentially recoverable
-			return false, nil
+			return nil, nil
 		}
 	}
 	// Assume all other errors are not recoverable
-	return false, fmt.Errorf("failed to query node health: %w", err)
+	return nil, fmt.Errorf("failed to query node health: %w", err)
 }
 
 // WaitForHealthy blocks until Node.IsHealthy returns true or an error (including context timeout) is observed.
