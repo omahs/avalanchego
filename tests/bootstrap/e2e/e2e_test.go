@@ -71,6 +71,8 @@ var _ = ginkgo.BeforeSuite(func() {
 			filepath.Join(repoRoot, relativePath, "Dockerfile.avalanchego"),
 			imageName,
 		))
+
+		// TODO(marun) Test the checking of the image version
 	}
 
 	ginkgo.By("Loading the image to the kind cluster")

@@ -4,6 +4,19 @@
 
 ## Bootstrap controller
 
+### Primary Requirement
+
+ - Run full sync and state sync bootstrap tests against mainnet and testnet
+
+### Secondary requiremnts
+
+ - Run tests in infra-managed kubernetes
+   - Ensures sufficient resources (~2tb required per test)
+   - Ensures metrics and logs will be collected by Datadog
+ - Ensure that no more than one test will be run against a given image
+ -
+
+### TODO
  - accepts bootstrap configurations
    - network-id
    - sync-mode
