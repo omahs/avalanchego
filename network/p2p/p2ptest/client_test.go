@@ -5,7 +5,6 @@ package p2ptest
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -37,7 +36,7 @@ func TestNewClient_AppRequest(t *testing.T) {
 	tests := []struct {
 		name        string
 		appResponse []byte
-		appErr      error
+		appErr      *common.AppError
 		appRequestF func(ctx context.Context, client *p2p.Client, onResponse p2p.AppResponseCallback) error
 	}{
 		{
@@ -48,8 +47,11 @@ func TestNewClient_AppRequest(t *testing.T) {
 			},
 		},
 		{
-			name:   "AppRequest - error",
-			appErr: errors.New("foobar"),
+			name: "AppRequest - error",
+			appErr: &common.AppError{
+				Code:    123,
+				Message: "foobar",
+			},
 			appRequestF: func(ctx context.Context, client *p2p.Client, onResponse p2p.AppResponseCallback) error {
 				return client.AppRequest(ctx, set.Of(ids.GenerateTestNodeID()), []byte("foo"), onResponse)
 			},
@@ -62,8 +64,11 @@ func TestNewClient_AppRequest(t *testing.T) {
 			},
 		},
 		{
-			name:   "AppRequestAny - error",
-			appErr: errors.New("foobar"),
+			name: "AppRequestAny - error",
+			appErr: &common.AppError{
+				Code:    123,
+				Message: "foobar",
+			},
 			appRequestF: func(ctx context.Context, client *p2p.Client, onResponse p2p.AppResponseCallback) error {
 				return client.AppRequestAny(ctx, []byte("foo"), onResponse)
 			},
@@ -82,7 +87,7 @@ func TestNewClient_AppRequest(t *testing.T) {
 
 			appRequestChan := make(chan struct{})
 			testHandler := p2p.TestHandler{
-				AppRequestF: func(context.Context, ids.NodeID, time.Time, []byte) ([]byte, error) {
+				AppRequestF: func(context.Context, ids.NodeID, time.Time, []byte) ([]byte, *common.AppError) {
 					return tt.appResponse, tt.appErr
 				},
 			}
