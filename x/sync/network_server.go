@@ -74,7 +74,7 @@ type SyncGetChangeProofHandler struct {
 
 func (*SyncGetChangeProofHandler) AppGossip(context.Context, ids.NodeID, []byte) {}
 
-func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.NodeID, _ time.Time, requestBytes []byte) ([]byte, *common.AppError) {
+func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, _ ids.NodeID, _ time.Time, requestBytes []byte) ([]byte, *common.AppError) {
 	request := &pb.SyncGetChangeProofRequest{}
 	if err := proto.Unmarshal(requestBytes, request); err != nil {
 		return nil, &common.AppError{
