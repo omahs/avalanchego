@@ -53,6 +53,13 @@ func NewClient(t *testing.T, rootCtx context.Context, handler p2p.Handler) *p2p.
 		return clientNetwork.AppResponse(ctx, serverNodeID, requestID, responseBytes)
 	}
 
+	serverSender.SendAppErrorF = func(ctx context.Context, _ ids.NodeID, requestID uint32, errorCode int32, errorMessage string) error {
+		return clientNetwork.AppRequestFailed(ctx, serverNodeID, requestID, &common.AppError{
+			Code:    errorCode,
+			Message: errorMessage,
+		})
+	}
+
 	require.NoError(t, clientNetwork.Connected(rootCtx, clientNodeID, nil))
 	require.NoError(t, clientNetwork.Connected(rootCtx, serverNodeID, nil))
 	require.NoError(t, serverNetwork.Connected(rootCtx, clientNodeID, nil))

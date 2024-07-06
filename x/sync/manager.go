@@ -134,8 +134,8 @@ type Manager struct {
 // TODO remove non-config values out of this struct
 type ManagerConfig struct {
 	DB                    DB
-	RangeProofClient      Client
-	ChangeProofClient     Client
+	RangeProofClient      *p2p.Client
+	ChangeProofClient     *p2p.Client
 	SimultaneousWorkLimit int
 	Log                   logging.Logger
 	TargetRoot            ids.ID
@@ -424,7 +424,7 @@ func (m *Manager) requestRangeProof(ctx context.Context, work *workItem) {
 	m.metrics.RequestMade()
 }
 
-func (m *Manager) sendRequest(ctx context.Context, client Client, requestBytes []byte, onResponse p2p.AppResponseCallback) error {
+func (m *Manager) sendRequest(ctx context.Context, client *p2p.Client, requestBytes []byte, onResponse p2p.AppResponseCallback) error {
 	if len(m.config.StateSyncNodes) == 0 {
 		return client.AppRequestAny(ctx, requestBytes, onResponse)
 	}

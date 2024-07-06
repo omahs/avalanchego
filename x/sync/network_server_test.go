@@ -15,6 +15,8 @@ import (
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/database/memdb"
 	"github.com/ava-labs/avalanchego/ids"
+	"github.com/ava-labs/avalanchego/network/p2p"
+	"github.com/ava-labs/avalanchego/snow/engine/common"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/x/merkledb"
 
@@ -34,7 +36,7 @@ func Test_Server_GetRangeProof(t *testing.T) {
 	tests := []struct {
 		name                     string
 		request                  *pb.SyncGetRangeProofRequest
-		expectedErr              error
+		expectedErr              *common.AppError
 		expectedResponseLen      int
 		expectedMaxResponseBytes int
 		nodeID                   ids.NodeID
@@ -48,7 +50,7 @@ func Test_Server_GetRangeProof(t *testing.T) {
 				BytesLimit: 1000,
 			},
 			proofNil:    true,
-			expectedErr: ErrMinProofSizeIsTooLarge,
+			expectedErr: p2p.ErrUnexpected,
 		},
 		{
 			name: "byteslimit is 0",
@@ -58,7 +60,7 @@ func Test_Server_GetRangeProof(t *testing.T) {
 				BytesLimit: 0,
 			},
 			proofNil:    true,
-			expectedErr: errInvalidBytesLimit,
+			expectedErr: p2p.ErrUnexpected,
 		},
 		{
 			name: "keylimit is 0",
@@ -68,7 +70,7 @@ func Test_Server_GetRangeProof(t *testing.T) {
 				BytesLimit: defaultRequestByteSizeLimit,
 			},
 			proofNil:    true,
-			expectedErr: errInvalidKeyLimit,
+			expectedErr: p2p.ErrUnexpected,
 		},
 		{
 			name: "keys out of order",
@@ -80,7 +82,7 @@ func Test_Server_GetRangeProof(t *testing.T) {
 				EndKey:     &pb.MaybeBytes{Value: []byte{0}},
 			},
 			proofNil:    true,
-			expectedErr: errInvalidBounds,
+			expectedErr: p2p.ErrUnexpected,
 		},
 		{
 			name: "key limit too large",
@@ -108,7 +110,7 @@ func Test_Server_GetRangeProof(t *testing.T) {
 				BytesLimit: defaultRequestByteSizeLimit,
 			},
 			proofNil:    true,
-			expectedErr: merkledb.ErrEmptyProof,
+			expectedErr: p2p.ErrUnexpected,
 		},
 	}
 
@@ -212,11 +214,10 @@ func Test_Server_GetChangeProof(t *testing.T) {
 	tests := []struct {
 		name                     string
 		request                  *pb.SyncGetChangeProofRequest
-		expectedErr              error
+		expectedErr              *common.AppError
 		expectedResponseLen      int
 		expectedMaxResponseBytes int
 		nodeID                   ids.NodeID
-		proofNil                 bool
 		expectRangeProof         bool // Otherwise expect change proof
 	}{
 		{
@@ -256,8 +257,7 @@ func Test_Server_GetChangeProof(t *testing.T) {
 				KeyLimit:      defaultRequestKeyLimit,
 				BytesLimit:    0,
 			},
-			proofNil:    true,
-			expectedErr: errInvalidBytesLimit,
+			expectedErr: p2p.ErrUnexpected,
 		},
 		{
 			name: "keylimit is 0",
@@ -267,8 +267,7 @@ func Test_Server_GetChangeProof(t *testing.T) {
 				KeyLimit:      0,
 				BytesLimit:    defaultRequestByteSizeLimit,
 			},
-			proofNil:    true,
-			expectedErr: errInvalidKeyLimit,
+			expectedErr: p2p.ErrUnexpected,
 		},
 		{
 			name: "keys out of order",
@@ -280,8 +279,7 @@ func Test_Server_GetChangeProof(t *testing.T) {
 				StartKey:      &pb.MaybeBytes{Value: []byte{1}},
 				EndKey:        &pb.MaybeBytes{Value: []byte{0}},
 			},
-			proofNil:    true,
-			expectedErr: errInvalidBounds,
+			expectedErr: p2p.ErrUnexpected,
 		},
 		{
 			name: "key limit too large",
@@ -327,8 +325,7 @@ func Test_Server_GetChangeProof(t *testing.T) {
 				BytesLimit:    defaultRequestByteSizeLimit,
 			},
 			expectedMaxResponseBytes: defaultRequestByteSizeLimit,
-			proofNil:                 true,
-			expectedErr:              merkledb.ErrInsufficientHistory,
+			expectedErr:              p2p.ErrUnexpected,
 		},
 		{
 			name: "empty proof",
@@ -339,8 +336,7 @@ func Test_Server_GetChangeProof(t *testing.T) {
 				BytesLimit:    defaultRequestByteSizeLimit,
 			},
 			expectedMaxResponseBytes: defaultRequestByteSizeLimit,
-			proofNil:                 true,
-			expectedErr:              merkledb.ErrEmptyProof,
+			expectedErr:              p2p.ErrUnexpected,
 		},
 	}
 
@@ -355,7 +351,7 @@ func Test_Server_GetChangeProof(t *testing.T) {
 			proofBytes, err := handler.AppRequest(context.Background(), test.nodeID, time.Time{}, requestBytes)
 			require.ErrorIs(err, test.expectedErr)
 
-			if test.proofNil {
+			if test.expectedErr != nil {
 				require.Nil(proofBytes)
 				return
 			}
@@ -377,7 +373,6 @@ func Test_Server_GetChangeProof(t *testing.T) {
 				}
 			}
 
-			require.NoError(err)
 			require.LessOrEqual(len(proofBytes), int(test.request.BytesLimit))
 			if test.expectedMaxResponseBytes > 0 {
 				require.LessOrEqual(len(proofBytes), test.expectedMaxResponseBytes)

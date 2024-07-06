@@ -11,9 +11,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/network/p2p"
 	"github.com/ava-labs/avalanchego/utils/maybe"
-	"github.com/ava-labs/avalanchego/utils/set"
 	"github.com/ava-labs/avalanchego/x/merkledb"
 )
 
@@ -30,20 +28,6 @@ var (
 	errTooManyBytes                  = errors.New("response contains more than requested bytes")
 	errUnexpectedChangeProofResponse = errors.New("unexpected response type")
 )
-
-type Client interface {
-	AppRequest(
-		ctx context.Context,
-		nodeIDs set.Set[ids.NodeID],
-		appRequestBytes []byte,
-		onResponse p2p.AppResponseCallback,
-	) error
-	AppRequestAny(
-		ctx context.Context,
-		appRequestBytes []byte,
-		onResponse p2p.AppResponseCallback,
-	) error
-}
 
 // Verify [rangeProof] is a valid range proof for keys in [start, end] for
 // root [rootBytes]. Returns [errTooManyKeys] if the response contains more

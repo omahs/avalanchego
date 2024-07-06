@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/network/p2p"
+	"github.com/ava-labs/avalanchego/snow/engine/common"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 	"github.com/ava-labs/avalanchego/utils/logging"
@@ -74,20 +74,20 @@ type SyncGetChangeProofHandler struct {
 
 func (*SyncGetChangeProofHandler) AppGossip(context.Context, ids.NodeID, []byte) {}
 
-func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.NodeID, _ time.Time, requestBytes []byte) ([]byte, error) {
+func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.NodeID, _ time.Time, requestBytes []byte) ([]byte, *common.AppError) {
 	request := &pb.SyncGetChangeProofRequest{}
 	if err := proto.Unmarshal(requestBytes, request); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal request: %w", err)
+		return nil, &common.AppError{
+			Code:    p2p.ErrUnexpected.Code,
+			Message: fmt.Sprintf("failed to unmarshal request: %s", err),
+		}
 	}
 
 	if err := validateChangeProofRequest(request); err != nil {
-		s.log.Debug(
-			"dropping invalid change proof request",
-			zap.Stringer("nodeID", nodeID),
-			zap.Stringer("request", request),
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, &common.AppError{
+			Code:    p2p.ErrUnexpected.Code,
+			Message: fmt.Sprintf("invalid request: %s", err),
+		}
 	}
 
 	// override limits if they exceed caps
@@ -100,12 +100,18 @@ func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.N
 
 	startRoot, err := ids.ToID(request.StartRootHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse start root hash: %w", err)
+		return nil, &common.AppError{
+			Code:    p2p.ErrUnexpected.Code,
+			Message: fmt.Sprintf("failed to parse start root hash: %s", err),
+		}
 	}
 
 	endRoot, err := ids.ToID(request.EndRootHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse end root hash: %w", err)
+		return nil, &common.AppError{
+			Code:    p2p.ErrUnexpected.Code,
+			Message: fmt.Sprintf("failed to parse end root hash: %s", err),
+		}
 	}
 
 	for keyLimit > 0 {
@@ -114,12 +120,18 @@ func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.N
 			if !errors.Is(err, merkledb.ErrInsufficientHistory) {
 				// We should only fail to get a change proof if we have insufficient history.
 				// Other errors are unexpected.
-				return nil, fmt.Errorf("failed to get change proof: %w", err)
+				return nil, &common.AppError{
+					Code:    p2p.ErrUnexpected.Code,
+					Message: fmt.Sprintf("failed to get change proof: %s", err),
+				}
 			}
 			if errors.Is(err, merkledb.ErrNoEndRoot) {
 				// [s.db] doesn't have [endRoot] in its history.
 				// We can't generate a change/range proof. Drop this request.
-				return nil, fmt.Errorf("failed to get change proof: %w", err)
+				return nil, &common.AppError{
+					Code:    p2p.ErrUnexpected.Code,
+					Message: fmt.Sprintf("failed to get change proof: %s", err),
+				}
 			}
 
 			// [s.db] doesn't have sufficient history to generate change proof.
@@ -143,7 +155,10 @@ func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.N
 				},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get range proof: %w", err)
+				return nil, &common.AppError{
+					Code:    p2p.ErrUnexpected.Code,
+					Message: fmt.Sprintf("failed to get range proof: %s", err),
+				}
 			}
 
 			return proofBytes, nil
@@ -156,7 +171,10 @@ func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.N
 			},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal change proof: %w", err)
+			return nil, &common.AppError{
+				Code:    p2p.ErrUnexpected.Code,
+				Message: fmt.Sprintf("failed to marshal change proof: %s", err),
+			}
 		}
 
 		if len(proofBytes) < bytesLimit {
@@ -167,7 +185,10 @@ func (s *SyncGetChangeProofHandler) AppRequest(ctx context.Context, nodeID ids.N
 		keyLimit = uint32(len(changeProof.KeyChanges)) / 2
 	}
 
-	return nil, fmt.Errorf("failed to generate proof: %w", ErrMinProofSizeIsTooLarge)
+	return nil, &common.AppError{
+		Code:    p2p.ErrUnexpected.Code,
+		Message: fmt.Sprintf("failed to generate proof: %s", ErrMinProofSizeIsTooLarge),
+	}
 }
 
 func (*SyncGetChangeProofHandler) CrossChainAppRequest(context.Context, ids.ID, time.Time, []byte) ([]byte, error) {
@@ -188,14 +209,20 @@ type SyncGetRangeProofHandler struct {
 
 func (*SyncGetRangeProofHandler) AppGossip(context.Context, ids.NodeID, []byte) {}
 
-func (s *SyncGetRangeProofHandler) AppRequest(ctx context.Context, _ ids.NodeID, _ time.Time, requestBytes []byte) ([]byte, error) {
+func (s *SyncGetRangeProofHandler) AppRequest(ctx context.Context, _ ids.NodeID, _ time.Time, requestBytes []byte) ([]byte, *common.AppError) {
 	request := &pb.SyncGetRangeProofRequest{}
 	if err := proto.Unmarshal(requestBytes, request); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal request: %w", err)
+		return nil, &common.AppError{
+			Code:    p2p.ErrUnexpected.Code,
+			Message: fmt.Sprintf("failed to unmarshal request: %s", err),
+		}
 	}
 
 	if err := validateRangeProofRequest(request); err != nil {
-		return nil, fmt.Errorf("invalid range proof request: %w", err)
+		return nil, &common.AppError{
+			Code:    p2p.ErrUnexpected.Code,
+			Message: fmt.Sprintf("invalid range proof request: %s", err),
+		}
 	}
 
 	// override limits if they exceed caps
@@ -211,7 +238,10 @@ func (s *SyncGetRangeProofHandler) AppRequest(ctx context.Context, _ ids.NodeID,
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get range proof: %w", err)
+		return nil, &common.AppError{
+			Code:    p2p.ErrUnexpected.Code,
+			Message: fmt.Sprintf("failed to get range proof: %s", err),
+		}
 	}
 
 	return proofBytes, nil
