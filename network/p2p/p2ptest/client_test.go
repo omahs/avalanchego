@@ -36,7 +36,7 @@ func TestNewClient_AppRequest(t *testing.T) {
 	tests := []struct {
 		name        string
 		appResponse []byte
-		appErr      *common.AppError
+		appErr      error
 		appRequestF func(ctx context.Context, client *p2p.Client, onResponse p2p.AppResponseCallback) error
 	}{
 		{
@@ -77,18 +77,20 @@ func TestNewClient_AppRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// TODO remove when AppErrors are supported
-			if tt.appErr != nil {
-				t.Skip("sending app errors not supported yet")
-			}
-
 			require := require.New(t)
 			ctx := context.Background()
 
 			appRequestChan := make(chan struct{})
 			testHandler := p2p.TestHandler{
 				AppRequestF: func(context.Context, ids.NodeID, time.Time, []byte) ([]byte, *common.AppError) {
-					return tt.appResponse, tt.appErr
+					if tt.appErr != nil {
+						return nil, &common.AppError{
+							Code:    123,
+							Message: tt.appErr.Error(),
+						}
+					}
+
+					return tt.appResponse, nil
 				},
 			}
 
@@ -97,7 +99,7 @@ func TestNewClient_AppRequest(t *testing.T) {
 				ctx,
 				client,
 				func(_ context.Context, _ ids.NodeID, responseBytes []byte, err error) {
-					require.Equal(tt.appErr, err)
+					require.ErrorIs(err, tt.appErr)
 					require.Equal(tt.appResponse, responseBytes)
 					close(appRequestChan)
 				},

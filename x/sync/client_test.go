@@ -107,7 +107,6 @@ func newModifiedChangeProofHandler(
 					ChangeProof: proof.ToProto(),
 				},
 			})
-
 			if err != nil {
 				return nil, &common.AppError{Code: 123, Message: err.Error()}
 			}
