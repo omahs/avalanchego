@@ -32,17 +32,25 @@ import (
 const (
 	defaultRequestKeyLimit      = maxKeyValuesLimit
 	defaultRequestByteSizeLimit = maxByteSizeLimit
+	initialRetryWait            = 10 * time.Millisecond
+	maxRetryWait                = time.Second
+	retryWaitFactor             = 1.5 // Larger --> timeout grows more quickly
 )
 
 var (
-	ErrAlreadyStarted              = errors.New("cannot start a Manager that has already been started")
-	ErrAlreadyClosed               = errors.New("Manager is closed")
-	ErrNoRangeProofClientProvided  = errors.New("range proof client is a required field of the sync config")
-	ErrNoChangeProofClientProvided = errors.New("change proofclient is a required field of the sync config")
-	ErrNoDatabaseProvided          = errors.New("sync database is a required field of the sync config")
-	ErrNoLogProvided               = errors.New("log is a required field of the sync config")
-	ErrZeroWorkLimit               = errors.New("simultaneous work limit must be greater than 0")
-	ErrFinishedWithUnexpectedRoot  = errors.New("finished syncing with an unexpected root")
+	ErrAlreadyStarted                = errors.New("cannot start a Manager that has already been started")
+	ErrAlreadyClosed                 = errors.New("Manager is closed")
+	ErrNoRangeProofClientProvided    = errors.New("range proof client is a required field of the sync config")
+	ErrNoChangeProofClientProvided   = errors.New("change proofclient is a required field of the sync config")
+	ErrNoDatabaseProvided            = errors.New("sync database is a required field of the sync config")
+	ErrNoLogProvided                 = errors.New("log is a required field of the sync config")
+	ErrZeroWorkLimit                 = errors.New("simultaneous work limit must be greater than 0")
+	ErrFinishedWithUnexpectedRoot    = errors.New("finished syncing with an unexpected root")
+	errInvalidRangeProof             = errors.New("failed to verify range proof")
+	errInvalidChangeProof            = errors.New("failed to verify change proof")
+	errTooManyKeys                   = errors.New("response contains more than requested keys")
+	errTooManyBytes                  = errors.New("response contains more than requested bytes")
+	errUnexpectedChangeProofResponse = errors.New("unexpected response type")
 )
 
 type priority byte
