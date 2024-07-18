@@ -54,7 +54,7 @@ var (
 )
 
 func maybeBytesToMaybe(mb *pb.MaybeBytes) maybe.Maybe[[]byte] {
-	if mb != nil {
+	if mb != nil && !mb.IsNothing {
 		return maybe.Some(mb.Value)
 	}
 	return maybe.Nothing[[]byte]()
