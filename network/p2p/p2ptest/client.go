@@ -35,7 +35,9 @@ func NewClient(t *testing.T, rootCtx context.Context, handler p2p.Handler) *p2p.
 	require.NoError(t, err)
 
 	clientSender.SendAppGossipF = func(ctx context.Context, _ common.SendConfig, gossipBytes []byte) error {
-		require.NoError(t, serverNetwork.AppGossip(ctx, clientNodeID, gossipBytes))
+		go func() {
+			require.NoError(t, serverNetwork.AppGossip(ctx, clientNodeID, gossipBytes))
+		}()
 
 		return nil
 	}
@@ -51,14 +53,22 @@ func NewClient(t *testing.T, rootCtx context.Context, handler p2p.Handler) *p2p.
 	}
 
 	serverSender.SendAppResponseF = func(ctx context.Context, _ ids.NodeID, requestID uint32, responseBytes []byte) error {
-		return clientNetwork.AppResponse(ctx, serverNodeID, requestID, responseBytes)
+		go func() {
+			require.NoError(t, clientNetwork.AppResponse(ctx, serverNodeID, requestID, responseBytes))
+		}()
+
+		return nil
 	}
 
 	serverSender.SendAppErrorF = func(ctx context.Context, _ ids.NodeID, requestID uint32, errorCode int32, errorMessage string) error {
-		return clientNetwork.AppRequestFailed(ctx, serverNodeID, requestID, &common.AppError{
-			Code:    errorCode,
-			Message: errorMessage,
-		})
+		go func() {
+			require.NoError(t, clientNetwork.AppRequestFailed(ctx, serverNodeID, requestID, &common.AppError{
+				Code:    errorCode,
+				Message: errorMessage,
+			}))
+		}()
+
+		return nil
 	}
 
 	require.NoError(t, clientNetwork.Connected(rootCtx, clientNodeID, nil))

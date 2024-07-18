@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -1127,4 +1128,56 @@ func findChildDifference(node1, node2 *merkledb.ProofNode, startIndex int) (byte
 	}
 	// there were no differences found
 	return 0, false
+}
+
+// Verify [rangeProof] is a valid range proof for keys in [start, end] for
+// root [rootBytes]. Returns [errTooManyKeys] if the response contains more
+// than [keyLimit] keys.
+func verifyRangeProof(
+	ctx context.Context,
+	rangeProof *merkledb.RangeProof,
+	keyLimit int,
+	start maybe.Maybe[[]byte],
+	end maybe.Maybe[[]byte],
+	rootBytes []byte,
+	tokenSize int,
+	hasher merkledb.Hasher,
+) error {
+	root, err := ids.ToID(rootBytes)
+	if err != nil {
+		return err
+	}
+
+	// Ensure the response does not contain more than the maximum requested number of leaves.
+	if len(rangeProof.KeyValues) > keyLimit {
+		return fmt.Errorf(
+			"%w: (%d) > %d)",
+			errTooManyKeys, len(rangeProof.KeyValues), keyLimit,
+		)
+	}
+
+	if err := rangeProof.Verify(
+		ctx,
+		start,
+		end,
+		root,
+		tokenSize,
+		hasher,
+	); err != nil {
+		return fmt.Errorf("%w due to %w", errInvalidRangeProof, err)
+	}
+	return nil
+}
+
+func calculateBackoff(attempt int) time.Duration {
+	if attempt == 0 {
+		return 0
+	}
+
+	retryWait := initialRetryWait * time.Duration(math.Pow(retryWaitFactor, float64(attempt)))
+	if retryWait > maxRetryWait {
+		retryWait = maxRetryWait
+	}
+
+	return retryWait
 }
