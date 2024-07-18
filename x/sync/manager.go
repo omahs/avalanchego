@@ -296,7 +296,7 @@ func (m *Manager) doWork(ctx context.Context, work *workItem) {
 	// Backoff for failed requests accounting for time this job has already
 	// spent waiting in the unprocessed queue
 	now := time.Now()
-	waitTime := calculateBackoff(work.attempt) - now.Sub(work.queueTime)
+	waitTime := max(0, calculateBackoff(work.attempt)-now.Sub(work.queueTime))
 
 	// Check if we can start this work item before the context deadline
 	deadline, ok := ctx.Deadline()
@@ -305,9 +305,7 @@ func (m *Manager) doWork(ctx context.Context, work *workItem) {
 		return
 	}
 
-	if waitTime > 0 {
-		<-time.After(waitTime)
-	}
+	<-time.After(waitTime)
 
 	if work.localRootID == ids.Empty {
 		// the keys in this range have not been downloaded, so get all key/values
