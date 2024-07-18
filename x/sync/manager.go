@@ -296,11 +296,12 @@ func (m *Manager) doWork(ctx context.Context, work *workItem) {
 	// Backoff for failed requests accounting for time this job has already
 	// spent waiting in the unprocessed queue
 	backoff := calculateBackoff(work.attempt)
-	waitTime := backoff - time.Since(work.queueTime)
+	now := time.Now()
+	waitTime := backoff - now.Sub(work.queueTime)
 
 	// Check if we can start this work item before the context deadline
 	deadline, ok := ctx.Deadline()
-	if ok && time.Now().Add(waitTime).After(deadline) {
+	if ok && now.Add(waitTime).After(deadline) {
 		m.finishWorkItem()
 		return
 	}
