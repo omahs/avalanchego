@@ -562,7 +562,6 @@ func (m *Manager) handleChangeProofResponse(
 	startKey := maybeBytesToMaybe(request.StartKey)
 	endKey := maybeBytesToMaybe(request.EndKey)
 
-	var changeOrRangeProof *merkledb.ChangeOrRangeProof
 	switch changeProofResp := changeProofResp.Response.(type) {
 	case *pb.SyncGetChangeProofResponse_ChangeProof:
 		// The server had enough history to send us a change proof
@@ -595,9 +594,17 @@ func (m *Manager) handleChangeProofResponse(
 			return fmt.Errorf("%w due to %w", errInvalidChangeProof, err)
 		}
 
-		changeOrRangeProof = &merkledb.ChangeOrRangeProof{
-			ChangeProof: &changeProof,
+		largestHandledKey := work.end
+		// if the proof wasn't empty, apply changes to the sync DB
+		if len(changeProof.KeyChanges) > 0 {
+			if err := m.config.DB.CommitChangeProof(ctx, &changeProof); err != nil {
+				m.setError(err)
+				return nil
+			}
+			largestHandledKey = maybe.Some(changeProof.KeyChanges[len(changeProof.KeyChanges)-1].Key)
 		}
+
+		m.completeWorkItem(ctx, work, largestHandledKey, targetRootID, changeProof.EndProof)
 	case *pb.SyncGetChangeProofResponse_RangeProof:
 
 		var rangeProof merkledb.RangeProof
@@ -620,9 +627,17 @@ func (m *Manager) handleChangeProofResponse(
 			return err
 		}
 
-		changeOrRangeProof = &merkledb.ChangeOrRangeProof{
-			RangeProof: &rangeProof,
+		largestHandledKey := work.end
+		if len(rangeProof.KeyValues) > 0 {
+			// Add all the key-value pairs we got to the database.
+			if err := m.config.DB.CommitRangeProof(ctx, work.start, work.end, &rangeProof); err != nil {
+				m.setError(err)
+				return nil
+			}
+			largestHandledKey = maybe.Some(rangeProof.KeyValues[len(rangeProof.KeyValues)-1].Key)
 		}
+
+		m.completeWorkItem(ctx, work, largestHandledKey, targetRootID, rangeProof.EndProof)
 	default:
 		return fmt.Errorf(
 			"%w: %T",
@@ -630,36 +645,6 @@ func (m *Manager) handleChangeProofResponse(
 		)
 	}
 
-	if changeOrRangeProof.ChangeProof != nil {
-		// The server had sufficient history to respond with a change proof.
-		changeProof := changeOrRangeProof.ChangeProof
-		largestHandledKey := work.end
-		// if the proof wasn't empty, apply changes to the sync DB
-		if len(changeProof.KeyChanges) > 0 {
-			if err := m.config.DB.CommitChangeProof(ctx, changeProof); err != nil {
-				m.setError(err)
-				return nil
-			}
-			largestHandledKey = maybe.Some(changeProof.KeyChanges[len(changeProof.KeyChanges)-1].Key)
-		}
-
-		m.completeWorkItem(ctx, work, largestHandledKey, targetRootID, changeProof.EndProof)
-		return nil
-	}
-
-	// The server responded with a range proof.
-	rangeProof := changeOrRangeProof.RangeProof
-	largestHandledKey := work.end
-	if len(rangeProof.KeyValues) > 0 {
-		// Add all the key-value pairs we got to the database.
-		if err := m.config.DB.CommitRangeProof(ctx, work.start, work.end, rangeProof); err != nil {
-			m.setError(err)
-			return nil
-		}
-		largestHandledKey = maybe.Some(rangeProof.KeyValues[len(rangeProof.KeyValues)-1].Key)
-	}
-
-	m.completeWorkItem(ctx, work, largestHandledKey, targetRootID, rangeProof.EndProof)
 	return nil
 }
 
