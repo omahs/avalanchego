@@ -32,9 +32,6 @@ if [[ -z "${IMAGE_TAG}" ]]; then
   IMAGE_TAG="${commit_hash}"
 fi
 
-# All test setups are intended to use the same builder image
-BUILDER_IMAGE_NAME="antithesis-avalanchego-builder:${IMAGE_TAG}"
-
 # The dockerfiles don't specify the golang version to minimize the changes required to bump
 # the version. Instead, the golang version is provided as an argument.
 GO_VERSION="$(go list -m -f '{{.GoVersion}}')"
@@ -42,7 +39,7 @@ GO_VERSION="$(go list -m -f '{{.GoVersion}}')"
 # Helper to simplify calling build_builder_image for test setups in this repo
 function build_builder_image_for_avalanchego {
   echo "Building builder image"
-  build_antithesis_builder_image "${GO_VERSION}" "${BUILDER_IMAGE_NAME}" "${AVALANCHE_PATH}" "${AVALANCHE_PATH}"
+  build_antithesis_builder_image "${GO_VERSION}" "antithesis-avalanchego-builder:${IMAGE_TAG}" "${AVALANCHE_PATH}" "${AVALANCHE_PATH}"
 }
 
 # Helper to simplify calling build_antithesis_images for test setups in this repo
@@ -57,7 +54,7 @@ function build_antithesis_images_for_avalanchego {
   else
     echo "Building images for ${test_setup}"
   fi
-  build_antithesis_images "${GO_VERSION}" "${image_prefix}" "antithesis-${test_setup}" "${IMAGE_TAG}" "${BUILDER_IMAGE_NAME}" \
+  build_antithesis_images "${GO_VERSION}" "${image_prefix}" "antithesis-${test_setup}" "${IMAGE_TAG}" "${IMAGE_TAG}" \
                           "${AVALANCHE_PATH}/tests/antithesis/${test_setup}/Dockerfile" "${uninstrumented_node_dockerfile}" \
                           "${AVALANCHE_PATH}" "${node_only}"
 }
@@ -66,7 +63,7 @@ if [[ "${TEST_SETUP}" == "avalanchego" ]]; then
   build_builder_image_for_avalanchego
 
   echo "Generating compose configuration for ${TEST_SETUP}"
-  gen_antithesis_compose_config "${IMAGE_TAG}" "${AVALANCHE_PATH}/tests/antithesis/avalanchego/gencomposeconfig" \
+  gen_antithesis_compose_config "${IMAGE_TAG}" "${AVALANCHE_PATH}" "./tests/antithesis/avalanchego/gencomposeconfig" \
                                 "${AVALANCHE_PATH}/build/antithesis/avalanchego"
 
   build_antithesis_images_for_avalanchego "${TEST_SETUP}" "${IMAGE_PREFIX}" "${AVALANCHE_PATH}/Dockerfile" "${NODE_ONLY:-}"
@@ -84,7 +81,7 @@ else
   "${AVALANCHE_PATH}"/scripts/build_xsvm.sh
 
   echo "Generating compose configuration for ${TEST_SETUP}"
-  gen_antithesis_compose_config "${IMAGE_TAG}" "${AVALANCHE_PATH}/tests/antithesis/xsvm/gencomposeconfig" \
+  gen_antithesis_compose_config "${IMAGE_TAG}" "${AVALANCHE_PATH}" "./tests/antithesis/xsvm/gencomposeconfig" \
                                 "${AVALANCHE_PATH}/build/antithesis/xsvm" \
                                 "AVALANCHEGO_PATH=${AVALANCHE_PATH}/build/avalanchego AVALANCHEGO_PLUGIN_DIR=${HOME}/.avalanchego/plugins"
 
